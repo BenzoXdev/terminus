@@ -1,0 +1,230 @@
+/* Terminus - Animations */
+
+/* Pulse animation for tracking indicator */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.pulse-dot {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Position marker pulse */
+@keyframes positionPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 217, 255, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(0, 217, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 217, 255, 0);
+  }
+}
+
+.position-pulse {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  animation: positionPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.destination-display {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.tracking-section {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Slide in from right */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* Shake animation for alerts */
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-5px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(5px);
+  }
+}
+
+.alert-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Glow animation */
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(0, 217, 255, 0.6);
+  }
+}
+
+.tracking-section.active .card {
+  animation: glow 2s ease-in-out infinite;
+}
+
+/* Progress bar animation */
+@keyframes progress {
+  from {
+    width: 0%;
+  }
+}
+
+.progress-fill {
+  animation: progress 0.5s ease-out;
+}
+
+/* Button hover lift */
+@keyframes lift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-2px);
+  }
+}
+
+.btn-primary:hover:not(:disabled) {
+  animation: lift 0.2s ease-out forwards;
+}
+
+/* Loading spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(0, 217, 255, 0.3);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Distance value update animation */
+@keyframes numberUpdate {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+    color: var(--accent-cyan);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.distance-value.updated {
+  animation: numberUpdate 0.3s ease-out;
+}
+
+/* Ripple effect */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(0, 217, 255, 0.5);
+  animation: ripple 0.6s ease-out;
+  pointer-events: none;
+}
+
+/* Smooth transitions for all interactive elements */
+button, input, select, .card, .favorite-item {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover effects */
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.favorite-item:hover {
+  transform: translateX(5px);
+}
+
+/* Focus states */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Autocomplete item hover */
+.autocomplete-item {
+  transition: all 0.2s ease;
+}
+
+.autocomplete-item:hover {
+  transform: translateX(5px);
+  padding-left: calc(var(--spacing-md) + 5px);
+}
+

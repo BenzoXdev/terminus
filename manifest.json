@@ -1,0 +1,100 @@
+{
+  "name": "Terminus - Réveil GPS Intelligent",
+  "short_name": "Terminus",
+  "description": "Ne ratez plus jamais votre arrêt ! Application de réveil GPS pour vos trajets.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0e27",
+  "theme_color": "#00d9ff",
+  "orientation": "portrait-primary",
+  "categories": ["navigation", "utilities", "travel"],
+  "lang": "fr",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "assets/icons/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nouvelle destination",
+      "short_name": "Destination",
+      "description": "Définir une nouvelle destination",
+      "url": "./?action=new",
+      "icons": [{ "src": "assets/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Favoris",
+      "short_name": "Favoris",
+      "description": "Voir mes favoris",
+      "url": "./?action=favorites",
+      "icons": [{ "src": "assets/icons/icon-96x96.png", "sizes": "96x96" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "docs/screenshots/dark-mode.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "docs/screenshots/light-mode.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ]
+}

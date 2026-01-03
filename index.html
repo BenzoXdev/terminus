@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Terminus - Réveillez-vous à l'approche de votre destination. Application intelligente de réveil GPS pour vos trajets.">
+  <meta name="theme-color" content="#00d9ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Terminus - Réveil à destination</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/icons/logo.svg">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/animations.css">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">
+        <svg class="logo-svg" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#00E5FF"/>
+              <stop offset="50%" stop-color="#00B8D4"/>
+              <stop offset="100%" stop-color="#0091EA"/>
+            </linearGradient>
+            <filter id="logoGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="1.5" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <!-- Cercle extérieur -->
+          <circle cx="26" cy="26" r="23" stroke="url(#logoGradient)" stroke-width="2.5" fill="none" opacity="0.3"/>
+          <!-- Cercle principal -->
+          <circle cx="26" cy="26" r="18" stroke="url(#logoGradient)" stroke-width="2.5" fill="none" filter="url(#logoGlow)"/>
+          <!-- Pin stylisé -->
+          <path d="M26 10 C18 10 12 16.5 12 24 C12 33 26 42 26 42 C26 42 40 33 40 24 C40 16.5 34 10 26 10 Z" fill="url(#logoGradient)" filter="url(#logoGlow)"/>
+          <!-- Cercle blanc -->
+          <circle cx="26" cy="22" r="6" fill="white"/>
+          <!-- Point central -->
+          <circle cx="26" cy="22" r="3" fill="url(#logoGradient)"/>
+          <!-- Lignes de tracking -->
+          <circle cx="26" cy="26" r="24" stroke="url(#logoGradient)" stroke-width="1" stroke-dasharray="3 5" fill="none" opacity="0.4">
+            <animateTransform attributeName="transform" type="rotate" from="0 26 26" to="360 26 26" dur="20s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+        <span class="logo-text">Terminus</span>
+      </a>
+      <nav class="nav">
+        <div class="theme-toggle" id="themeToggle" title="Changer le thème">
+          <span class="theme-toggle-icon">🌙</span>
+          <span class="theme-toggle-icon">☀️</span>
+          <div class="theme-toggle-slider"></div>
+        </div>
+        <button type="button" class="nav-btn" id="favoritesBtn" title="Favoris" aria-label="Favoris">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+          </svg>
+        </button>
+        <button type="button" class="nav-btn" id="settingsBtn" title="Paramètres" aria-label="Paramètres">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main">
+    <div class="container">
+
+      <!-- User Info Panel -->
+      <section class="user-info-panel" id="userInfoPanel">
+        <div class="user-info-header" id="userInfoHeader">
+          <div class="user-info-main">
+            <span class="user-info-icon">📍</span>
+            <div class="user-info-text">
+              <span class="user-info-location" id="userLocationText">Recherche...</span>
+              <span class="user-info-coords" id="userCoordsText">--</span>
+            </div>
+          </div>
+          <div class="user-info-extras">
+            <span class="user-info-weather" id="userWeather" title="Météo"></span>
+            <span class="user-info-time" id="userTime"></span>
+          </div>
+          <button type="button" class="user-info-toggle" id="toggleUserInfo" aria-label="Plus d'infos">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+        </div>
+        <div class="user-info-details" id="userInfoDetails" style="display: none;">
+          <div class="user-info-grid">
+            <div class="user-info-detail">
+              <span class="detail-icon">🌍</span>
+              <div class="detail-content">
+                <span class="detail-label">Région</span>
+                <span class="detail-value" id="userRegion">--</span>
+              </div>
+            </div>
+            <div class="user-info-detail">
+              <span class="detail-icon" id="countryIcon">🌐</span>
+              <div class="detail-content">
+                <span class="detail-label">Pays</span>
+                <span class="detail-value" id="userCountry">--</span>
+              </div>
+            </div>
+            <div class="user-info-detail">
+              <span class="detail-icon">🕐</span>
+              <div class="detail-content">
+                <span class="detail-label">Fuseau horaire</span>
+                <span class="detail-value" id="userTimezone">--</span>
+              </div>
+            </div>
+            <div class="user-info-detail">
+              <span class="detail-icon">📮</span>
+              <div class="detail-content">
+                <span class="detail-label">Code postal</span>
+                <span class="detail-value" id="userPostcode">--</span>
+              </div>
+            </div>
+            <div class="user-info-detail">
+              <span class="detail-icon">📡</span>
+              <div class="detail-content">
+                <span class="detail-label">Précision GPS</span>
+                <span class="detail-value" id="userAccuracy">--</span>
+              </div>
+            </div>
+            <div class="user-info-detail">
+              <span class="detail-icon">📱</span>
+              <div class="detail-content">
+                <span class="detail-label">Appareil</span>
+                <span class="detail-value" id="userDevice">--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Destination Section -->
+      <section class="destination-section">
+        <div class="card">
+          <h2 class="section-title">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            Définir votre destination
+          </h2>
+
+          <!-- Search Tabs -->
+          <div class="search-tabs">
+            <button type="button" class="search-tab active" data-tab="address" aria-label="Recherche par adresse">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              Adresse
+            </button>
+            <button type="button" class="search-tab" data-tab="coords" aria-label="Recherche par coordonnées">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+              Coordonnées
+            </button>
+            <button type="button" class="search-tab" data-tab="postal" aria-label="Recherche par code postal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+              Code postal
+            </button>
+          </div>
+
+          <!-- Search Input - Address -->
+          <div class="search-panel" id="searchAddress">
+            <div class="search-container">
+              <input
+                type="text"
+                id="addressInput"
+                class="search-input"
+                placeholder="Rechercher une adresse, gare, station..."
+                autocomplete="off"
+              >
+              <button type="button" class="search-btn" id="searchBtn" aria-label="Rechercher">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
+              </button>
+              <!-- Autocomplete Results -->
+              <div class="autocomplete-results" id="autocompleteResults"></div>
+            </div>
+
+            <!-- Filtres de recherche -->
+            <div class="search-filters" id="searchFilters" style="display: none;">
+              <div class="filter-group">
+                <label class="filter-label">Trier par :</label>
+                <select id="sortByFilter" class="filter-select">
+                  <option value="distance_asc">📍 Plus proche</option>
+                  <option value="distance_desc">📍 Plus loin</option>
+                  <option value="name_asc">🔤 A → Z</option>
+                  <option value="name_desc">🔤 Z → A</option>
+                  <option value="type">📁 Par type</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">Catégorie :</label>
+                <select id="categoryFilter" class="filter-select">
+                  <option value="all">🌐 Tout</option>
+                  <option value="transport">🚆 Transports</option>
+                  <option value="shopping">🛒 Commerces</option>
+                  <option value="food">🍽️ Restauration</option>
+                  <option value="accommodation">🏨 Hébergement</option>
+                  <option value="culture">🏛️ Culture</option>
+                  <option value="nature">🌳 Nature</option>
+                  <option value="services">🏦 Services</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Search Input - Coordinates -->
+          <div class="search-panel" id="searchCoords" style="display: none;">
+            <div class="coords-input-group">
+              <div class="coord-input">
+                <label for="latInput">Latitude</label>
+                <input type="number" id="latInput" class="search-input" placeholder="45.5017" step="0.0001">
+              </div>
+              <div class="coord-input">
+                <label for="lngInput">Longitude</label>
+                <input type="number" id="lngInput" class="search-input" placeholder="-73.5673" step="0.0001">
+              </div>
+              <button type="button" class="search-btn" id="searchCoordsBtn" aria-label="Rechercher par coordonnées">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Search Input - Postal Code -->
+          <div class="search-panel" id="searchPostal" style="display: none;">
+            <div class="search-container">
+              <input
+                type="text"
+                id="postalInput"
+                class="search-input"
+                placeholder="Code postal (ex: H2X 1Y4, 75001, 10001)"
+                autocomplete="off"
+              >
+              <button type="button" class="search-btn" id="searchPostalBtn" aria-label="Rechercher par code postal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Nearby Section -->
+          <div class="nearby-section" id="nearbySection" style="display: none;">
+            <p class="nearby-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 8v4l3 3"/>
+              </svg>
+              À proximité
+            </p>
+            <div class="nearby-grid" id="nearbyGrid"></div>
+          </div>
+
+          <!-- Transport Stops Nearby -->
+          <div class="transport-section" id="transportSection" style="display: none;">
+            <p class="transport-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18M9 21V9"/>
+              </svg>
+              Transports à proximité
+            </p>
+            <div class="transport-list" id="transportList"></div>
+          </div>
+
+          <!-- Quick Search -->
+          <div class="quick-stations">
+            <p class="quick-stations-label">Recherches rapides :</p>
+            <div class="stations-grid">
+              <button type="button" class="station-btn" data-station="gare centrale" data-icon="🚄">Gare centrale</button>
+              <button type="button" class="station-btn" data-station="aéroport international" data-icon="✈️">Aéroport</button>
+              <button type="button" class="station-btn" data-station="station métro" data-icon="🚇">Métro</button>
+              <button type="button" class="station-btn" data-station="gare routière bus" data-icon="🚌">Bus</button>
+              <button type="button" class="station-btn" data-station="centre-ville" data-icon="🏙️">Centre-ville</button>
+              <button type="button" class="station-btn" data-station="université" data-icon="🎓">Université</button>
+            </div>
+          </div>
+
+          <!-- Current Destination Display -->
+          <div class="destination-display" id="destinationDisplay" style="display: none;">
+            <div class="destination-info">
+              <span class="destination-icon">📍</span>
+              <div class="destination-text">
+                <p class="destination-name" id="destinationName"></p>
+                <p class="destination-address" id="destinationAddress"></p>
+                <p class="destination-coords" id="destinationCoords"></p>
+              </div>
+              <div class="destination-actions">
+                <button type="button" class="btn-favorite" id="addToFavoritesBtn" title="Ajouter aux favoris" aria-label="Ajouter aux favoris">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                </button>
+                <button type="button" class="btn-remove" id="removeDestinationBtn" title="Supprimer" aria-label="Supprimer la destination">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Trip Info Panel -->
+            <div class="trip-info" id="tripInfo">
+              <div class="trip-info-row">
+                <div class="trip-info-item">
+                  <span class="trip-info-icon">📏</span>
+                  <div class="trip-info-data">
+                    <span class="trip-info-value" id="tripDistance">--</span>
+                    <span class="trip-info-label">Distance</span>
+                  </div>
+                </div>
+                <div class="trip-info-item">
+                  <span class="trip-info-icon">🚶</span>
+                  <div class="trip-info-data">
+                    <span class="trip-info-value" id="tripWalkTime">--</span>
+                    <span class="trip-info-label">À pied</span>
+                  </div>
+                </div>
+                <div class="trip-info-item">
+                  <span class="trip-info-icon">🚗</span>
+                  <div class="trip-info-data">
+                    <span class="trip-info-value" id="tripDriveTime">--</span>
+                    <span class="trip-info-label">En voiture</span>
+                  </div>
+                </div>
+                <div class="trip-info-item">
+                  <span class="trip-info-icon">🚌</span>
+                  <div class="trip-info-data">
+                    <span class="trip-info-value" id="tripTransitTime">--</span>
+                    <span class="trip-info-label">Transport</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Zone Radius Control -->
+            <div class="zone-control">
+              <div class="zone-control-header">
+                <span class="zone-control-label">Zone d'alerte</span>
+                <span class="zone-control-value" id="zoneRadiusValue">1 km</span>
+              </div>
+              <input type="range" class="zone-slider" id="zoneRadiusSlider" min="100" max="5000" step="100" value="1000">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tracking Section -->
+      <section class="tracking-section" id="trackingSection" style="display: none;">
+        <div class="card">
+          <div class="tracking-header">
+            <h3 class="tracking-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Suivi en cours
+            </h3>
+            <button type="button" class="btn-stop" id="stopTrackingBtn">Arrêter</button>
+          </div>
+
+          <!-- Tracking Stats Grid -->
+          <div class="tracking-stats">
+            <div class="tracking-stat">
+              <div class="tracking-stat-value" id="distanceValue">--</div>
+              <div class="tracking-stat-label">Distance</div>
+            </div>
+            <div class="tracking-stat">
+              <div class="tracking-stat-value" id="etaValue">--</div>
+              <div class="tracking-stat-label">Arrivée</div>
+            </div>
+            <div class="tracking-stat">
+              <div class="tracking-stat-value" id="speedValue">--</div>
+              <div class="tracking-stat-label">Vitesse</div>
+            </div>
+          </div>
+
+          <!-- Extended Tracking Info -->
+          <div class="tracking-extended">
+            <div class="tracking-row">
+              <div class="tracking-detail">
+                <span class="tracking-detail-label">🧭 Direction</span>
+                <span class="tracking-detail-value" id="headingValue">--</span>
+              </div>
+              <div class="tracking-detail">
+                <span class="tracking-detail-label">📡 Précision</span>
+                <span class="tracking-detail-value" id="accuracyValue">--</span>
+              </div>
+            </div>
+            <div class="tracking-row">
+              <div class="tracking-detail">
+                <span class="tracking-detail-label">⛰️ Altitude</span>
+                <span class="tracking-detail-value" id="altitudeValue">--</span>
+              </div>
+              <div class="tracking-detail">
+                <span class="tracking-detail-label">📍 Coordonnées</span>
+                <span class="tracking-detail-value" id="currentCoordsValue">--</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+
+          <div class="status-indicator">
+            <div class="pulse-dot"></div>
+            <span id="statusText">Suivi GPS actif</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Map Section -->
+      <section class="map-section">
+        <div class="card map-card">
+          <div class="map-controls">
+            <button type="button" class="map-btn" id="centerMapBtn" title="Centrer sur ma position" aria-label="Centrer sur ma position">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
+              </svg>
+            </button>
+            <button type="button" class="map-btn" id="selectOnMapBtn" title="Sélectionner sur la carte" aria-label="Sélectionner sur la carte">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+            </button>
+            <button type="button" class="map-btn" id="fitBoundsBtn" title="Voir tout" aria-label="Ajuster la vue">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+              </svg>
+            </button>
+            <button type="button" class="map-btn" id="zoomInBtn" title="Zoom +" aria-label="Zoom avant">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35M11 8v6M8 11h6"/>
+              </svg>
+            </button>
+            <button type="button" class="map-btn" id="zoomOutBtn" title="Zoom -" aria-label="Zoom arrière">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35M8 11h6"/>
+              </svg>
+            </button>
+          </div>
+          <div id="map" class="map-container"></div>
+
+          <!-- Map Legend -->
+          <div class="map-legend">
+            <div class="legend-item">
+              <span class="legend-dot user"></span>
+              <span>Ma position</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot destination"></span>
+              <span>Destination</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line"></span>
+              <span>Trajet</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Action Buttons -->
+      <section class="actions-section">
+        <button type="button" class="btn-primary btn-start" id="startTrackingBtn" disabled>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span class="btn-text">Démarrer le suivi</span>
+        </button>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <span class="footer-logo">⦿</span>
+        <span class="footer-name">Terminus</span>
+        <span class="footer-tagline">• Réveillez-vous à destination</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/benzoXdev/terminus" target="_blank" class="footer-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+        <span class="footer-separator">•</span>
+        <span class="footer-version">v3.0</span>
+      </div>
+      <div class="footer-credits">
+        <span>Créé avec ❤️ par</span>
+        <a href="https://github.com/benzoXdev" target="_blank" class="footer-author">Amar Benkherouf</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Settings Modal -->
+  <div class="modal" id="settingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Paramètres</h2>
+        <button type="button" class="modal-close" id="closeSettingsBtn" aria-label="Fermer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-group">
+          <label class="setting-label">Type d'alerte</label>
+          <select id="alertTypeSelect" class="setting-select">
+            <option value="all" selected>Tout (Son + Vibration + Notification)</option>
+            <option value="sound">Son uniquement</option>
+            <option value="vibration">Vibration uniquement</option>
+            <option value="notification">Notification uniquement</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Type de son</label>
+          <select id="soundTypeSelect" class="setting-select">
+            <option value="classic" selected>Classique</option>
+            <option value="gentle">Doux</option>
+            <option value="urgent">Urgent</option>
+            <option value="melody">Mélodie</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Tester les alertes</label>
+          <div class="test-buttons-grid">
+            <button type="button" class="btn-test" id="testSoundBtn">
+              <span class="btn-test-icon">🔊</span>
+              Son
+            </button>
+            <button type="button" class="btn-test" id="testVibrationBtn">
+              <span class="btn-test-icon">📳</span>
+              Vibration
+            </button>
+            <button type="button" class="btn-test" id="testNotificationBtn">
+              <span class="btn-test-icon">🔔</span>
+              Notification
+            </button>
+            <button type="button" class="btn-test btn-test-full" id="testAllBtn">
+              <span class="btn-test-icon">⚡</span>
+              Tester tout
+            </button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Thème</label>
+          <select id="themeSelect" class="setting-select">
+            <option value="dark">Sombre</option>
+            <option value="light">Clair</option>
+            <option value="auto">Automatique (système)</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Unités</label>
+          <select id="unitsSelect" class="setting-select">
+            <option value="metric" selected>Métrique (km)</option>
+            <option value="imperial">Impérial (miles)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Favorites Modal -->
+  <div class="modal" id="favoritesModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Favoris</h2>
+        <button type="button" class="modal-close" id="closeFavoritesBtn" aria-label="Fermer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="favorites-list" id="favoritesList">
+          <p class="empty-state">Aucun favori pour le moment</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toastContainer"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- App Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/categories.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/geolocation.js"></script>
+  <script src="js/alerts.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/transport.js"></script>
+  <script src="js/search.js"></script>
+  <script src="js/user-info.js"></script>
+  <script src="js/app.js"></script>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(registration => console.log('SW registered'))
+          .catch(error => console.log('SW registration failed'));
+      });
+    }
+  </script>
+</body>
+</html>
