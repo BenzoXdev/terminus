@@ -201,6 +201,28 @@ Les contributions sont les bienvenues !
 
 ---
 
+## 🌐 Déploiement GitHub Pages
+
+### Activation simple (2 minutes)
+
+1. **Allez sur les paramètres du dépôt** :
+   - [https://github.com/BenzoXdev/terminus/settings/pages](https://github.com/BenzoXdev/terminus/settings/pages)
+
+2. **Configurez la source** :
+   - **Source** : Sélectionnez **"Deploy from a branch"**
+   - **Branch** : Choisissez **`main`**
+   - **Folder** : `/ (root)`
+   - Cliquez **Save**
+
+3. **Attendez 1-2 minutes** puis visitez :
+   - **https://benzoxdev.github.io/terminus/**
+
+✅ Votre application PWA sera en ligne et fonctionnelle !
+
+> 📖 Guide détaillé : [docs/DEPLOY.md](docs/DEPLOY.md)
+
+---
+
 ## 📄 Licence
 
 Ce projet est sous licence [MIT](LICENSE).
