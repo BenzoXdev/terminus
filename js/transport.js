@@ -362,6 +362,491 @@ class TransportService {
       return `🚌 ${departure.time}`;
     }
   }
+
+  // ===== ITINÉRAIRE DÉTAILLÉ =====
+
+  // Générer un itinéraire détaillé en transport en commun
+  async generateDetailedRoute(startLat, startLng, endLat, endLng, userLocation = null) {
+    try {
+      // Trouver les arrêts proches du départ et de l'arrivée
+      const startStops = await this.findNearbyStops(startLat, startLng, 800);
+      const endStops = await this.findNearbyStops(endLat, endLng, 800);
+
+      if (startStops.length === 0 || endStops.length === 0) {
+        return this.generateWalkOnlyRoute(startLat, startLng, endLat, endLng);
+      }
+
+      // Calculer la distance totale
+      const totalDistance = this.calculateDistance(startLat, startLng, endLat, endLng);
+      
+      // Générer les étapes de l'itinéraire
+      const route = await this.buildTransitRoute(
+        { lat: startLat, lng: startLng },
+        { lat: endLat, lng: endLng },
+        startStops,
+        endStops,
+        totalDistance
+      );
+
+      return route;
+    } catch (error) {
+      console.error('Erreur génération itinéraire:', error);
+      return this.generateWalkOnlyRoute(startLat, startLng, endLat, endLng);
+    }
+  }
+
+  // Construire un itinéraire en transport en commun
+  async buildTransitRoute(start, end, startStops, endStops, totalDistance) {
+    const now = new Date();
+    const route = {
+      type: 'transit',
+      startTime: now,
+      totalDistance: totalDistance,
+      estimatedDuration: 0,
+      steps: [],
+      summary: '',
+      transfers: 0,
+      walkDistance: 0,
+      transitDistance: 0,
+      price: null
+    };
+
+    // Étape 1: Marche vers le premier arrêt
+    const firstStop = startStops[0];
+    const walkToStop = this.calculateDistance(start.lat, start.lng, firstStop.lat, firstStop.lng);
+    
+    if (walkToStop > 50) {
+      route.steps.push({
+        type: 'walk',
+        icon: '🚶',
+        mode: 'À pied',
+        from: {
+          name: 'Position actuelle',
+          lat: start.lat,
+          lng: start.lng
+        },
+        to: {
+          name: firstStop.name,
+          lat: firstStop.lat,
+          lng: firstStop.lng
+        },
+        distance: walkToStop,
+        duration: Math.ceil(walkToStop / 80), // 80m/min = ~5km/h
+        departureTime: this.formatTimeHHMM(now),
+        arrivalTime: this.formatTimeHHMM(new Date(now.getTime() + (walkToStop / 80) * 60000)),
+        instructions: `Marcher vers ${firstStop.name}`,
+        color: '#6b7280'
+      });
+      route.walkDistance += walkToStop;
+      route.estimatedDuration += Math.ceil(walkToStop / 80);
+    }
+
+    // Déterminer le type de transport et les correspondances
+    const transitSteps = await this.determineTransitSteps(firstStop, endStops[0], now, route.estimatedDuration);
+    
+    for (const step of transitSteps) {
+      route.steps.push(step);
+      route.estimatedDuration += step.duration;
+      
+      if (step.type === 'transit') {
+        route.transitDistance += step.distance;
+      } else if (step.type === 'walk') {
+        route.walkDistance += step.distance;
+      }
+      
+      if (step.type === 'transfer') {
+        route.transfers++;
+      }
+    }
+
+    // Étape finale: Marche vers la destination
+    const lastStop = endStops[0];
+    const walkFromStop = this.calculateDistance(lastStop.lat, lastStop.lng, end.lat, end.lng);
+    
+    if (walkFromStop > 50) {
+      const arrivalAtStop = new Date(now.getTime() + route.estimatedDuration * 60000);
+      route.steps.push({
+        type: 'walk',
+        icon: '🚶',
+        mode: 'À pied',
+        from: {
+          name: lastStop.name,
+          lat: lastStop.lat,
+          lng: lastStop.lng
+        },
+        to: {
+          name: 'Destination',
+          lat: end.lat,
+          lng: end.lng
+        },
+        distance: walkFromStop,
+        duration: Math.ceil(walkFromStop / 80),
+        departureTime: this.formatTimeHHMM(arrivalAtStop),
+        arrivalTime: this.formatTimeHHMM(new Date(arrivalAtStop.getTime() + (walkFromStop / 80) * 60000)),
+        instructions: 'Marcher vers votre destination',
+        color: '#6b7280'
+      });
+      route.walkDistance += walkFromStop;
+      route.estimatedDuration += Math.ceil(walkFromStop / 80);
+    }
+
+    // Calculer l'heure d'arrivée finale
+    route.arrivalTime = new Date(now.getTime() + route.estimatedDuration * 60000);
+    
+    // Générer le résumé
+    route.summary = this.generateRouteSummary(route);
+    
+    // Estimer le prix (simulation)
+    route.price = this.estimatePrice(route);
+
+    return route;
+  }
+
+  // Déterminer les étapes de transport
+  async determineTransitSteps(startStop, endStop, startTime, elapsedMinutes) {
+    const steps = [];
+    const currentTime = new Date(startTime.getTime() + elapsedMinutes * 60000);
+
+    // Obtenir les horaires du premier arrêt
+    const departures = await this.getRealtimeDepartures(startStop);
+    
+    // Distance entre les arrêts
+    const transitDistance = this.calculateDistance(startStop.lat, startStop.lng, endStop.lat, endStop.lng);
+    
+    // Déterminer si on a besoin de correspondance
+    const needsTransfer = transitDistance > 3000 || startStop.type !== endStop.type;
+
+    if (needsTransfer) {
+      // Première ligne de transport
+      const firstLine = departures?.departures?.[0] || {
+        line: startStop.lines || 'Ligne 1',
+        destination: 'Centre',
+        time: this.formatTimeHHMM(new Date(currentTime.getTime() + 5 * 60000)),
+        minutesUntil: 5
+      };
+
+      const transferPoint = {
+        name: this.generateTransferName(startStop, endStop),
+        lat: (startStop.lat + endStop.lat) / 2,
+        lng: (startStop.lng + endStop.lng) / 2
+      };
+
+      const firstLegDuration = Math.ceil(transitDistance / 2 / 400); // ~400m/min en transport
+      const waitTime = Math.max(2, firstLine.minutesUntil);
+
+      // Attente
+      if (waitTime > 1) {
+        steps.push({
+          type: 'wait',
+          icon: '⏳',
+          mode: 'Attente',
+          location: startStop.name,
+          duration: waitTime,
+          departureTime: this.formatTimeHHMM(currentTime),
+          arrivalTime: this.formatTimeHHMM(new Date(currentTime.getTime() + waitTime * 60000)),
+          instructions: `Attendre ${waitTime} min`,
+          color: '#f59e0b'
+        });
+      }
+
+      // Premier trajet
+      const firstDepartureTime = new Date(currentTime.getTime() + waitTime * 60000);
+      steps.push({
+        type: 'transit',
+        icon: this.getTransportIcon(startStop.type),
+        mode: this.getTransportMode(startStop.type),
+        line: firstLine.line,
+        lineColor: this.getLineColor(firstLine.line),
+        direction: firstLine.destination,
+        from: {
+          name: startStop.name,
+          lat: startStop.lat,
+          lng: startStop.lng
+        },
+        to: {
+          name: transferPoint.name,
+          lat: transferPoint.lat,
+          lng: transferPoint.lng
+        },
+        stops: this.generateIntermediateStops(startStop, transferPoint, 3),
+        distance: Math.round(transitDistance / 2),
+        duration: firstLegDuration,
+        departureTime: this.formatTimeHHMM(firstDepartureTime),
+        arrivalTime: this.formatTimeHHMM(new Date(firstDepartureTime.getTime() + firstLegDuration * 60000)),
+        frequency: '5-10 min',
+        operator: startStop.operator || 'Transport local',
+        instructions: `Prendre ${this.getTransportMode(startStop.type)} ${firstLine.line} direction ${firstLine.destination}`,
+        color: this.getLineColor(firstLine.line)
+      });
+
+      // Correspondance
+      const transferTime = new Date(firstDepartureTime.getTime() + firstLegDuration * 60000);
+      steps.push({
+        type: 'transfer',
+        icon: '🔄',
+        mode: 'Correspondance',
+        from: transferPoint.name,
+        walkTime: 3,
+        duration: 5,
+        departureTime: this.formatTimeHHMM(transferTime),
+        arrivalTime: this.formatTimeHHMM(new Date(transferTime.getTime() + 5 * 60000)),
+        instructions: `Correspondance vers ${this.getTransportMode(endStop.type)}`,
+        color: '#8b5cf6'
+      });
+
+      // Deuxième trajet
+      const secondDepartureTime = new Date(transferTime.getTime() + 5 * 60000);
+      const secondLegDuration = Math.ceil(transitDistance / 2 / 400);
+      
+      steps.push({
+        type: 'transit',
+        icon: this.getTransportIcon(endStop.type),
+        mode: this.getTransportMode(endStop.type),
+        line: endStop.lines || 'Ligne 2',
+        lineColor: this.getLineColor(endStop.lines || 'Ligne 2'),
+        direction: 'Terminus',
+        from: {
+          name: transferPoint.name,
+          lat: transferPoint.lat,
+          lng: transferPoint.lng
+        },
+        to: {
+          name: endStop.name,
+          lat: endStop.lat,
+          lng: endStop.lng
+        },
+        stops: this.generateIntermediateStops(transferPoint, endStop, 2),
+        distance: Math.round(transitDistance / 2),
+        duration: secondLegDuration,
+        departureTime: this.formatTimeHHMM(secondDepartureTime),
+        arrivalTime: this.formatTimeHHMM(new Date(secondDepartureTime.getTime() + secondLegDuration * 60000)),
+        frequency: '5-10 min',
+        operator: endStop.operator || 'Transport local',
+        instructions: `Prendre ${this.getTransportMode(endStop.type)} direction Terminus`,
+        color: this.getLineColor(endStop.lines || 'Ligne 2')
+      });
+
+    } else {
+      // Trajet direct sans correspondance
+      const departure = departures?.departures?.[0] || {
+        line: startStop.lines || 'Direct',
+        destination: endStop.name,
+        time: this.formatTimeHHMM(new Date(currentTime.getTime() + 5 * 60000)),
+        minutesUntil: 5
+      };
+
+      const waitTime = Math.max(2, departure.minutesUntil);
+      const transitDuration = Math.ceil(transitDistance / 400);
+
+      // Attente
+      if (waitTime > 1) {
+        steps.push({
+          type: 'wait',
+          icon: '⏳',
+          mode: 'Attente',
+          location: startStop.name,
+          duration: waitTime,
+          departureTime: this.formatTimeHHMM(currentTime),
+          arrivalTime: this.formatTimeHHMM(new Date(currentTime.getTime() + waitTime * 60000)),
+          instructions: `Attendre ${waitTime} min`,
+          color: '#f59e0b'
+        });
+      }
+
+      // Trajet direct
+      const departureTime = new Date(currentTime.getTime() + waitTime * 60000);
+      steps.push({
+        type: 'transit',
+        icon: this.getTransportIcon(startStop.type),
+        mode: this.getTransportMode(startStop.type),
+        line: departure.line,
+        lineColor: this.getLineColor(departure.line),
+        direction: departure.destination,
+        from: {
+          name: startStop.name,
+          lat: startStop.lat,
+          lng: startStop.lng
+        },
+        to: {
+          name: endStop.name,
+          lat: endStop.lat,
+          lng: endStop.lng
+        },
+        stops: this.generateIntermediateStops(startStop, endStop, 5),
+        distance: transitDistance,
+        duration: transitDuration,
+        departureTime: this.formatTimeHHMM(departureTime),
+        arrivalTime: this.formatTimeHHMM(new Date(departureTime.getTime() + transitDuration * 60000)),
+        frequency: '5-10 min',
+        operator: startStop.operator || 'Transport local',
+        instructions: `Prendre ${this.getTransportMode(startStop.type)} ${departure.line} direction ${departure.destination}`,
+        color: this.getLineColor(departure.line)
+      });
+    }
+
+    return steps;
+  }
+
+  // Générer les arrêts intermédiaires
+  generateIntermediateStops(from, to, count) {
+    const stops = [];
+    const names = ['Place centrale', 'Marché', 'Université', 'Hôtel de ville', 'Parc', 'Bibliothèque', 'Stade', 'Musée'];
+    
+    for (let i = 0; i < count; i++) {
+      const ratio = (i + 1) / (count + 1);
+      stops.push({
+        name: names[i % names.length] || `Arrêt ${i + 1}`,
+        lat: from.lat + (to.lat - from.lat) * ratio,
+        lng: from.lng + (to.lng - from.lng) * ratio
+      });
+    }
+    
+    return stops;
+  }
+
+  // Générer un nom de correspondance
+  generateTransferName(startStop, endStop) {
+    const names = ['Gare centrale', 'Place du marché', 'Centre-ville', 'Carrefour', 'Hub'];
+    return names[Math.floor(Math.random() * names.length)];
+  }
+
+  // Générer un itinéraire à pied uniquement
+  generateWalkOnlyRoute(startLat, startLng, endLat, endLng) {
+    const now = new Date();
+    const distance = this.calculateDistance(startLat, startLng, endLat, endLng);
+    const duration = Math.ceil(distance / 80); // 80m/min
+
+    return {
+      type: 'walk',
+      startTime: now,
+      arrivalTime: new Date(now.getTime() + duration * 60000),
+      totalDistance: distance,
+      estimatedDuration: duration,
+      steps: [{
+        type: 'walk',
+        icon: '🚶',
+        mode: 'À pied',
+        from: {
+          name: 'Position actuelle',
+          lat: startLat,
+          lng: startLng
+        },
+        to: {
+          name: 'Destination',
+          lat: endLat,
+          lng: endLng
+        },
+        distance: distance,
+        duration: duration,
+        departureTime: this.formatTimeHHMM(now),
+        arrivalTime: this.formatTimeHHMM(new Date(now.getTime() + duration * 60000)),
+        instructions: 'Marcher jusqu\'à votre destination',
+        color: '#6b7280'
+      }],
+      summary: `${this.formatTime(duration)} à pied (${this.formatDistance(distance)})`,
+      transfers: 0,
+      walkDistance: distance,
+      transitDistance: 0,
+      price: null
+    };
+  }
+
+  // Générer le résumé de l'itinéraire
+  generateRouteSummary(route) {
+    const parts = [];
+    
+    // Modes de transport utilisés
+    const modes = [...new Set(route.steps.filter(s => s.type === 'transit').map(s => s.mode))];
+    
+    if (modes.length > 0) {
+      parts.push(modes.join(' + '));
+    }
+    
+    if (route.transfers > 0) {
+      parts.push(`${route.transfers} correspondance${route.transfers > 1 ? 's' : ''}`);
+    }
+    
+    return `${this.formatTime(route.estimatedDuration)} • ${this.formatDistance(route.totalDistance)}${parts.length > 0 ? ' • ' + parts.join(' • ') : ''}`;
+  }
+
+  // Estimer le prix
+  estimatePrice(route) {
+    // Prix simulé basé sur la distance
+    if (route.transitDistance === 0) return null;
+    
+    const basePrice = 3.50; // Prix de base
+    const pricePerKm = 0.15; // Prix par km
+    const price = basePrice + (route.transitDistance / 1000) * pricePerKm;
+    
+    return {
+      amount: Math.round(price * 100) / 100,
+      currency: 'CAD',
+      formatted: `${price.toFixed(2)} $`
+    };
+  }
+
+  // Obtenir l'icône de transport
+  getTransportIcon(type) {
+    const icons = {
+      'bus': '🚌',
+      'metro': '🚇',
+      'train': '🚆',
+      'tram': '🚊',
+      'ferry': '⛴️',
+      'bus_station': '🚏'
+    };
+    return icons[type] || '🚌';
+  }
+
+  // Obtenir le mode de transport
+  getTransportMode(type) {
+    const modes = {
+      'bus': 'Bus',
+      'metro': 'Métro',
+      'train': 'Train',
+      'tram': 'Tramway',
+      'ferry': 'Ferry',
+      'bus_station': 'Bus'
+    };
+    return modes[type] || 'Bus';
+  }
+
+  // Obtenir la couleur d'une ligne
+  getLineColor(line) {
+    const colors = {
+      'Ligne 1': '#00a86b',
+      'Ligne 2': '#ff6f00',
+      'Ligne 3': '#0077be',
+      'Ligne 4': '#8b008b',
+      'Ligne 5': '#00bcd4',
+      'A': '#f44336',
+      'B': '#2196f3',
+      'C': '#4caf50',
+      'D': '#ff9800',
+      'E': '#9c27b0'
+    };
+    
+    // Essayer de trouver une correspondance
+    for (const [key, color] of Object.entries(colors)) {
+      if (line && line.toString().includes(key)) {
+        return color;
+      }
+    }
+    
+    // Couleur par défaut basée sur le hash du nom
+    const hash = line ? line.toString().split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0) : 0;
+    
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 70%, 50%)`;
+  }
+
+  // Formater l'heure HH:MM
+  formatTimeHHMM(date) {
+    return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
 }
 
 // Instance globale

@@ -1407,6 +1407,231 @@ class TerminusApp {
     document.getElementById('tripWalkTime').textContent = transportService.formatTime(times.walk);
     document.getElementById('tripDriveTime').textContent = transportService.formatTime(times.car);
     document.getElementById('tripTransitTime').textContent = transportService.formatTime(times.transit);
+
+    // Générer l'itinéraire détaillé en transport
+    this.generateRouteDetails();
+  }
+
+  // ===== ROUTE DETAILS (Itinéraire détaillé) =====
+  async generateRouteDetails() {
+    if (!this.currentDestination || !this.userLocation) return;
+
+    const routeDetailsEl = document.getElementById('routeDetails');
+    const routeStepsEl = document.getElementById('routeSteps');
+
+    // Afficher la section et le loader
+    routeDetailsEl.style.display = 'block';
+    routeStepsEl.innerHTML = `
+      <div class="route-loading">
+        <div class="loading-spinner"></div>
+        <span>Calcul de l'itinéraire...</span>
+      </div>
+    `;
+
+    try {
+      // Générer l'itinéraire
+      const route = await transportService.generateDetailedRoute(
+        this.userLocation.lat,
+        this.userLocation.lng,
+        this.currentDestination.lat,
+        this.currentDestination.lng,
+        this.userLocation
+      );
+
+      // Stocker l'itinéraire courant
+      this.currentRoute = route;
+
+      // Afficher le résumé
+      this.displayRouteSummary(route);
+
+      // Afficher les étapes
+      this.displayRouteSteps(route);
+
+      // Ajouter les événements
+      this.setupRouteDetailsEvents();
+
+    } catch (error) {
+      console.error('Erreur génération itinéraire:', error);
+      routeStepsEl.innerHTML = `
+        <div class="route-loading">
+          <span>⚠️ Impossible de calculer l'itinéraire en transport</span>
+        </div>
+      `;
+    }
+  }
+
+  displayRouteSummary(route) {
+    // Durée
+    document.getElementById('routeDuration').textContent = transportService.formatTime(route.estimatedDuration);
+    
+    // Heure d'arrivée
+    const arrivalTime = route.arrivalTime || new Date(Date.now() + route.estimatedDuration * 60000);
+    document.getElementById('routeArrival').textContent = 
+      `Arrivée: ${arrivalTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    // Correspondances
+    const transfersEl = document.getElementById('routeTransfers');
+    if (route.transfers > 0) {
+      transfersEl.innerHTML = `<span class="transfers-icon">🔄</span> ${route.transfers} correspondance${route.transfers > 1 ? 's' : ''}`;
+    } else {
+      transfersEl.innerHTML = `<span class="transfers-icon">✓</span> Direct`;
+    }
+
+    // Prix
+    const priceEl = document.getElementById('routePrice');
+    if (route.price) {
+      priceEl.textContent = route.price.formatted;
+      priceEl.style.display = 'inline-block';
+    } else {
+      priceEl.style.display = 'none';
+    }
+  }
+
+  displayRouteSteps(route) {
+    const container = document.getElementById('routeSteps');
+
+    if (!route.steps || route.steps.length === 0) {
+      container.innerHTML = '<div class="route-loading">Aucun itinéraire disponible</div>';
+      return;
+    }
+
+    container.innerHTML = route.steps.map((step, index) => this.createStepHTML(step, index)).join('');
+
+    // Ajouter les événements pour les arrêts intermédiaires
+    container.querySelectorAll('.route-step-stops-toggle').forEach(toggle => {
+      toggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        const list = toggle.nextElementSibling;
+        const isShown = list.classList.contains('show');
+        list.classList.toggle('show');
+        toggle.querySelector('.toggle-icon').textContent = isShown ? '▶' : '▼';
+        toggle.querySelector('.toggle-text').textContent = isShown ? 'Voir les arrêts' : 'Masquer';
+      });
+    });
+  }
+
+  createStepHTML(step, index) {
+    const typeClass = step.type || 'transit';
+    
+    let stopsHTML = '';
+    if (step.stops && step.stops.length > 0) {
+      stopsHTML = `
+        <div class="route-step-stops">
+          <button type="button" class="route-step-stops-toggle">
+            <span class="toggle-icon">▶</span>
+            <span class="toggle-text">Voir ${step.stops.length} arrêts</span>
+          </button>
+          <div class="route-step-stops-list">
+            ${step.stops.map(stop => `<div class="route-step-stop">${stop.name}</div>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    let lineHTML = '';
+    if (step.line) {
+      const lineColor = step.lineColor || step.color || 'var(--accent-primary)';
+      lineHTML = `<span class="route-step-line" style="background: ${lineColor}">${step.line}</span>`;
+    }
+
+    let metaHTML = '';
+    if (step.type === 'transit') {
+      metaHTML = `
+        <div class="route-step-meta">
+          <span class="route-step-distance">📏 ${transportService.formatDistance(step.distance)}</span>
+          ${step.frequency ? `<span class="route-step-frequency">⏱️ Fréq: ${step.frequency}</span>` : ''}
+          ${step.operator ? `<span class="route-step-operator">🚍 ${step.operator}</span>` : ''}
+        </div>
+      `;
+    } else if (step.type === 'walk') {
+      metaHTML = `
+        <div class="route-step-meta">
+          <span class="route-step-distance">📏 ${transportService.formatDistance(step.distance)}</span>
+        </div>
+      `;
+    }
+
+    let locationsHTML = '';
+    if (step.from && step.to) {
+      locationsHTML = `
+        <div class="route-step-locations">
+          <div class="route-step-from">${step.from.name}</div>
+          <div class="route-step-arrow">${step.duration} min</div>
+          <div class="route-step-to">${step.to.name}</div>
+        </div>
+      `;
+    } else if (step.location) {
+      locationsHTML = `
+        <div class="route-step-locations">
+          <div class="route-step-from">${step.location}</div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="route-step ${typeClass}" data-step-index="${index}">
+        <div class="route-step-icon">${step.icon}</div>
+        <div class="route-step-content">
+          <div class="route-step-header">
+            <div class="route-step-mode">
+              <span class="route-step-mode-name">${step.mode}</span>
+              ${lineHTML}
+              ${step.direction ? `<span style="color: var(--text-muted); font-size: 0.8rem;">→ ${step.direction}</span>` : ''}
+            </div>
+            <div class="route-step-times">
+              <span class="route-step-time-departure">${step.departureTime}</span>
+              <span class="route-step-time-duration">${step.duration} min</span>
+            </div>
+          </div>
+          ${locationsHTML}
+          ${stopsHTML}
+          ${metaHTML}
+          ${step.instructions ? `<div class="route-step-instructions" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">${step.instructions}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  setupRouteDetailsEvents() {
+    // Toggle route details
+    const toggleBtn = document.getElementById('toggleRouteDetails');
+    if (toggleBtn && !toggleBtn.hasAttribute('data-bound')) {
+      toggleBtn.setAttribute('data-bound', 'true');
+      toggleBtn.addEventListener('click', () => {
+        const stepsEl = document.getElementById('routeSteps');
+        const isCollapsed = stepsEl.classList.contains('collapsed');
+        stepsEl.classList.toggle('collapsed');
+        toggleBtn.classList.toggle('collapsed');
+      });
+    }
+
+    // Refresh route
+    const refreshBtn = document.getElementById('refreshRouteBtn');
+    if (refreshBtn && !refreshBtn.hasAttribute('data-bound')) {
+      refreshBtn.setAttribute('data-bound', 'true');
+      refreshBtn.addEventListener('click', () => {
+        this.generateRouteDetails();
+        this.showToast('🔄 Itinéraire actualisé', 'success');
+      });
+    }
+
+    // Alternative routes
+    const alternativeBtn = document.getElementById('alternativeRouteBtn');
+    if (alternativeBtn && !alternativeBtn.hasAttribute('data-bound')) {
+      alternativeBtn.setAttribute('data-bound', 'true');
+      alternativeBtn.addEventListener('click', () => {
+        this.showAlternativeRoutes();
+      });
+    }
+  }
+
+  async showAlternativeRoutes() {
+    this.showToast('🔍 Recherche d\'alternatives...', 'info');
+    
+    // Régénérer avec options différentes (simulation)
+    await this.generateRouteDetails();
+    
+    this.showToast('✓ Voici le meilleur itinéraire disponible', 'success');
   }
 
   removeDestination() {

@@ -2599,3 +2599,435 @@ body::before {
     font-size: 1rem;
   }
 }
+
+/* ===== ROUTE DETAILS (Itinéraire détaillé) ===== */
+.route-details {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--bg-input);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.route-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.route-details-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  margin: 0;
+}
+
+.route-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: var(--transition);
+}
+
+.route-toggle-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.route-toggle-btn.collapsed svg {
+  transform: rotate(-90deg);
+}
+
+/* Route Summary */
+.route-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm);
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.route-summary-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.route-duration {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+}
+
+.route-arrival {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.route-summary-details {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.route-transfers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.route-price {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent-secondary);
+  padding: 4px 10px;
+  background: rgba(0, 217, 255, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+/* Route Steps */
+.route-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.route-steps.collapsed {
+  display: none;
+}
+
+.route-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  color: var(--text-muted);
+}
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Route Step */
+.route-step {
+  display: flex;
+  position: relative;
+  padding-left: 40px;
+}
+
+.route-step::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--border-color);
+}
+
+.route-step:first-child::before {
+  top: 50%;
+}
+
+.route-step:last-child::before {
+  bottom: 50%;
+}
+
+.route-step-icon {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 3px solid var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  z-index: 1;
+}
+
+.route-step.walk .route-step-icon {
+  border-color: #6b7280;
+}
+
+.route-step.transit .route-step-icon {
+  border-color: var(--accent-primary);
+}
+
+.route-step.transfer .route-step-icon {
+  border-color: #8b5cf6;
+  background: #8b5cf6;
+  color: white;
+}
+
+.route-step.wait .route-step-icon {
+  border-color: #f59e0b;
+  background: #f59e0b;
+  color: white;
+}
+
+.route-step-content {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-xs) 0;
+  transition: var(--transition);
+}
+
+.route-step-content:hover {
+  border-color: var(--accent-primary);
+  transform: translateX(4px);
+}
+
+.route-step-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.route-step-mode {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.route-step-mode-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.route-step-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  background: var(--accent-primary);
+}
+
+.route-step-times {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 0.8rem;
+}
+
+.route-step-time-departure {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.route-step-time-duration {
+  color: var(--text-muted);
+}
+
+.route-step-locations {
+  margin-bottom: var(--spacing-xs);
+}
+
+.route-step-from,
+.route-step-to {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+.route-step-from::before {
+  content: '📍';
+  font-size: 0.7rem;
+}
+
+.route-step-to::before {
+  content: '🎯';
+  font-size: 0.7rem;
+}
+
+.route-step-arrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.route-step-arrow::before {
+  content: '↓';
+  font-size: 0.9rem;
+}
+
+.route-step-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.route-step-distance {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.route-step-frequency {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Intermediate Stops */
+.route-step-stops {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) 0;
+}
+
+.route-step-stops-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.8rem;
+  color: var(--accent-primary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.route-step-stops-toggle:hover {
+  background: rgba(0, 217, 255, 0.1);
+}
+
+.route-step-stops-list {
+  display: none;
+  margin-top: var(--spacing-xs);
+  padding-left: var(--spacing-md);
+  border-left: 2px dashed var(--border-color);
+}
+
+.route-step-stops-list.show {
+  display: block;
+}
+
+.route-step-stop {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 4px 0;
+  position: relative;
+}
+
+.route-step-stop::before {
+  content: '•';
+  position: absolute;
+  left: -14px;
+  color: var(--accent-primary);
+}
+
+/* Route Actions */
+.route-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+}
+
+.btn-route-action {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-route-action:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: rgba(0, 217, 255, 0.05);
+}
+
+/* Responsive Route Details */
+@media (max-width: 768px) {
+  .route-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .route-summary-main {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .route-summary-details {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .route-step-header {
+    flex-direction: column;
+  }
+
+  .route-step-times {
+    align-items: flex-start;
+    flex-direction: row;
+    gap: var(--spacing-sm);
+  }
+
+  .route-actions {
+    flex-direction: column;
+  }
+}
