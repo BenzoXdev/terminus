@@ -2,6 +2,8 @@
 class TerminusApp {
   constructor() {
     this.currentDestination = null;
+    this.destinations = []; // Liste de destinations pour multi-étapes
+    this.currentDestinationIndex = 0; // Index de la destination actuelle
     this.isTracking = false;
     this.autocompleteTimeout = null;
     this.initialDistance = null;
@@ -16,6 +18,10 @@ class TerminusApp {
     this.timeUpdateInterval = null;
     this.currentSearchResults = [];
     this.deferredInstallPrompt = null;
+    this.tripStartTime = null;
+    this.tripStartLocation = null;
+    this.tripMaxSpeed = 0;
+    this.tripSpeeds = [];
 
     this.init();
   }
@@ -24,6 +30,15 @@ class TerminusApp {
     this.initTheme();
     mapService.init('map');
     this.loadSettings();
+
+    // Vérifier si on est en mode visualisation de partage
+    if (shareService.isViewingShare()) {
+      const shareId = shareService.getShareIdFromUrl();
+      if (shareId) {
+        this.initShareViewer(shareId);
+        return; // Ne pas initialiser l'app normale
+      }
+    }
 
     const savedDestination = storageService.getCurrentDestination();
     if (savedDestination) {
@@ -384,6 +399,11 @@ class TerminusApp {
       this.stopTracking();
     });
 
+    // Share position
+    document.getElementById('sharePositionBtn')?.addEventListener('click', () => {
+      this.startSharingPosition();
+    });
+
     // Destination
     document.getElementById('removeDestinationBtn').addEventListener('click', () => {
       this.removeDestination();
@@ -393,6 +413,12 @@ class TerminusApp {
       this.addToFavorites();
     });
 
+    document.getElementById('addToRouteBtn')?.addEventListener('click', () => {
+      if (this.currentDestination) {
+        this.addDestinationToRoute(this.currentDestination);
+      }
+    });
+
     // Settings
     document.getElementById('settingsBtn').addEventListener('click', () => {
       this.openSettings();
@@ -400,6 +426,56 @@ class TerminusApp {
 
     document.getElementById('closeSettingsBtn').addEventListener('click', () => {
       this.closeSettings();
+    });
+
+    // History
+    document.getElementById('historyBtn').addEventListener('click', () => {
+      this.openHistory();
+    });
+
+    document.getElementById('closeHistoryBtn').addEventListener('click', () => {
+      this.closeHistory();
+    });
+
+    // Calendar
+    document.getElementById('calendarBtn')?.addEventListener('click', () => {
+      this.openCalendar();
+    });
+
+    document.getElementById('closeCalendarBtn')?.addEventListener('click', () => {
+      this.closeCalendar();
+    });
+
+    document.getElementById('importCalendarBtn')?.addEventListener('click', () => {
+      document.getElementById('calendarFileInput').click();
+    });
+
+    document.getElementById('calendarFileInput')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        await this.importCalendar(file);
+      }
+    });
+
+    // History tabs
+    document.querySelectorAll('.history-tab').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        const tabName = e.target.dataset.tab;
+        this.switchHistoryTab(tabName);
+      });
+    });
+
+    // History actions
+    document.getElementById('exportHistoryBtn')?.addEventListener('click', () => {
+      this.exportHistory();
+    });
+
+    document.getElementById('importHistoryBtn')?.addEventListener('click', () => {
+      this.importHistory();
+    });
+
+    document.getElementById('clearHistoryBtn')?.addEventListener('click', () => {
+      this.clearHistory();
     });
 
     // Favorites
@@ -507,6 +583,14 @@ class TerminusApp {
       if (e.target.id === 'settingsModal') this.closeSettings();
     });
 
+    document.getElementById('historyModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'historyModal') this.closeHistory();
+    });
+
+    document.getElementById('calendarModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'calendarModal') this.closeCalendar();
+    });
+
     document.getElementById('favoritesModal').addEventListener('click', (e) => {
       if (e.target.id === 'favoritesModal') this.closeFavorites();
     });
@@ -515,6 +599,8 @@ class TerminusApp {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         this.closeSettings();
+        this.closeHistory();
+        this.closeCalendar();
         this.closeFavorites();
       }
     });
@@ -888,7 +974,7 @@ class TerminusApp {
     }
   }
 
-  displayTransportStops(stops) {
+  async displayTransportStops(stops) {
     const section = document.getElementById('transportSection');
     const list = document.getElementById('transportList');
 
@@ -897,20 +983,44 @@ class TerminusApp {
       return;
     }
 
-    list.innerHTML = stops.slice(0, 5).map(stop => `
-      <div class="transport-item" data-lat="${stop.lat}" data-lng="${stop.lng}" data-name="${stop.name}">
-        <span class="transport-item-icon">${stop.icon}</span>
-        <div class="transport-item-info">
-          <div class="transport-item-name">${this.truncateText(stop.name, 30)}</div>
-          ${stop.lines ? `<div class="transport-item-lines">Lignes: ${stop.lines}</div>` : ''}
-          ${stop.operator ? `<div class="transport-item-operator">${stop.operator}</div>` : ''}
+    // Obtenir les horaires en temps réel pour chaque arrêt
+    const stopsWithDepartures = await Promise.all(
+      stops.slice(0, 5).map(async stop => {
+        const departures = await transportService.getRealtimeDepartures(stop);
+        return { ...stop, departures };
+      })
+    );
+
+    list.innerHTML = stopsWithDepartures.map(stop => {
+      const departuresHtml = stop.departures && stop.departures.departures
+        ? stop.departures.departures.slice(0, 3).map(dep => {
+            const statusClass = dep.status === 'arriving' ? 'departure-arriving' : 
+                               dep.status === 'soon' ? 'departure-soon' : 'departure-scheduled';
+            return `<span class="departure-time ${statusClass}">${transportService.formatDepartureTime(dep)}</span>`;
+          }).join('')
+        : '<span class="departure-time">Horaires non disponibles</span>';
+
+      return `
+        <div class="transport-item" data-lat="${stop.lat}" data-lng="${stop.lng}" data-name="${stop.name}" data-stop-id="${stop.id}">
+          <span class="transport-item-icon">${stop.icon}</span>
+          <div class="transport-item-info">
+            <div class="transport-item-name">${this.truncateText(stop.name, 30)}</div>
+            ${stop.lines ? `<div class="transport-item-lines">Lignes: ${stop.lines}</div>` : ''}
+            <div class="transport-item-departures">${departuresHtml}</div>
+          </div>
+          <div class="transport-item-meta">
+            <div class="transport-item-distance">${transportService.formatDistance(stop.distance, this.units)}</div>
+            <button type="button" class="transport-refresh-btn" onclick="app.refreshStopDepartures('${stop.id}')" title="Rafraîchir">🔄</button>
+          </div>
         </div>
-        <div class="transport-item-distance">${transportService.formatDistance(stop.distance, this.units)}</div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     list.querySelectorAll('.transport-item').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
+        // Ne pas déclencher si on clique sur le bouton refresh
+        if (e.target.closest('.transport-refresh-btn')) return;
+
         const destination = {
           lat: parseFloat(item.dataset.lat),
           lng: parseFloat(item.dataset.lng),
@@ -922,6 +1032,43 @@ class TerminusApp {
     });
 
     section.style.display = 'block';
+  }
+
+  // Rafraîchir les horaires d'un arrêt
+  async refreshStopDepartures(stopId) {
+    if (!this.userLocation) return;
+
+    try {
+      const stops = await transportService.findNearbyStops(
+        this.userLocation.lat,
+        this.userLocation.lng,
+        1000
+      );
+
+      const stop = stops.find(s => s.id.toString() === stopId.toString());
+      if (!stop) return;
+
+      const departures = await transportService.getRealtimeDepartures(stop);
+      
+      // Mettre à jour l'affichage
+      const item = document.querySelector(`[data-stop-id="${stopId}"]`);
+      if (item && departures) {
+        const departuresHtml = departures.departures.slice(0, 3).map(dep => {
+          const statusClass = dep.status === 'arriving' ? 'departure-arriving' : 
+                             dep.status === 'soon' ? 'departure-soon' : 'departure-scheduled';
+          return `<span class="departure-time ${statusClass}">${transportService.formatDepartureTime(dep)}</span>`;
+        }).join('');
+
+        const departuresEl = item.querySelector('.transport-item-departures');
+        if (departuresEl) {
+          departuresEl.innerHTML = departuresHtml;
+        }
+      }
+
+      this.showToast('🔄 Horaires mis à jour', 'success');
+    } catch (error) {
+      this.showToast('Erreur de rafraîchissement', 'error');
+    }
   }
 
   displayPopularPlaces() {
@@ -1014,49 +1161,234 @@ class TerminusApp {
   }
 
   // ===== DESTINATION MANAGEMENT =====
-  setDestination(destination) {
+  setDestination(destination, addToRoute = false) {
+    if (addToRoute && this.destinations.length > 0) {
+      // Ajouter à l'itinéraire
+      this.addDestinationToRoute(destination);
+      return;
+    }
+
+    // Mode simple : une seule destination
     this.currentDestination = destination;
+    this.destinations = [destination];
+    this.currentDestinationIndex = 0;
     storageService.setCurrentDestination(destination);
+
+    this.updateDestinationUI();
+    this.showToast('📍 Destination définie', 'success');
+  }
+
+  // Ajouter une destination à l'itinéraire
+  addDestinationToRoute(destination) {
+    this.destinations.push(destination);
+    this.updateDestinationsList();
+    this.updateMapWithAllDestinations();
+    this.showToast(`📍 Étape ${this.destinations.length} ajoutée`, 'success');
+  }
+
+  // Mettre à jour l'UI de destination
+  updateDestinationUI() {
+    if (!this.currentDestination) return;
 
     const settings = storageService.getSettings();
     this.zoneRadius = settings.alertDistance || 1000;
     document.getElementById('zoneRadiusSlider').value = this.zoneRadius;
     this.updateZoneRadius(this.zoneRadius);
 
-    mapService.setDestination(destination.lat, destination.lng, destination.name || destination.address);
-    mapService.updateZoneCircle(destination.lat, destination.lng, this.zoneRadius);
-
-    // Update UI
-    const displayName = destination.shortName || destination.name?.split(',')[0] || destination.address;
+    // Afficher la destination actuelle
+    const displayName = this.currentDestination.shortName || this.currentDestination.name?.split(',')[0] || this.currentDestination.address;
     document.getElementById('destinationName').textContent = displayName;
-    document.getElementById('destinationAddress').textContent = destination.address || '';
+    document.getElementById('destinationAddress').textContent = this.currentDestination.address || '';
 
     // Afficher les coordonnées
     const coordsEl = document.getElementById('destinationCoords');
     if (coordsEl) {
-      coordsEl.textContent = `📍 ${destination.lat.toFixed(5)}, ${destination.lng.toFixed(5)}`;
+      coordsEl.textContent = `📍 ${this.currentDestination.lat.toFixed(5)}, ${this.currentDestination.lng.toFixed(5)}`;
+    }
+
+    // Afficher l'indicateur multi-étapes
+    if (this.destinations.length > 1) {
+      const stepIndicator = document.getElementById('stepIndicator');
+      if (stepIndicator) {
+        stepIndicator.textContent = `Étape ${this.currentDestinationIndex + 1}/${this.destinations.length}`;
+        stepIndicator.style.display = 'block';
+      }
+    } else {
+      const stepIndicator = document.getElementById('stepIndicator');
+      if (stepIndicator) stepIndicator.style.display = 'none';
     }
 
     document.getElementById('destinationDisplay').style.display = 'block';
     document.getElementById('startTrackingBtn').disabled = false;
 
+    // Mettre à jour la carte
+    mapService.setDestination(this.currentDestination.lat, this.currentDestination.lng, displayName);
+    mapService.updateZoneCircle(this.currentDestination.lat, this.currentDestination.lng, this.zoneRadius);
+
+    // Mettre à jour la liste des destinations
+    this.updateDestinationsList();
+    if (this.destinations.length > 1) {
+      this.updateMapWithAllDestinations();
+    }
+
     // Update trip info
     this.updateTripInfo();
 
     // Center map
-    mapService.setCenter(destination.lat, destination.lng, 14);
+    mapService.setCenter(this.currentDestination.lat, this.currentDestination.lng, 14);
 
     // Draw route if user location available
     if (this.userLocation) {
       mapService.updateRoute(
         this.userLocation.lat,
         this.userLocation.lng,
-        destination.lat,
-        destination.lng
+        this.currentDestination.lat,
+        this.currentDestination.lng
       );
     }
+  }
 
-    this.showToast('📍 Destination définie', 'success');
+  // Mettre à jour la liste des destinations dans l'UI
+  updateDestinationsList() {
+    const container = document.getElementById('destinationsList');
+    if (!container) return;
+
+    if (this.destinations.length <= 1) {
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'block';
+    container.innerHTML = this.destinations.map((dest, index) => {
+      const name = dest.shortName || dest.name?.split(',')[0] || dest.address;
+      const isActive = index === this.currentDestinationIndex;
+      
+      return `
+        <div class="destination-step ${isActive ? 'active' : ''}" data-index="${index}">
+          <div class="step-number">${index + 1}</div>
+          <div class="step-info">
+            <div class="step-name">${name}</div>
+            <div class="step-address">${dest.address || ''}</div>
+          </div>
+          <div class="step-actions">
+            ${index > 0 ? `<button type="button" class="step-btn" onclick="app.moveDestination(${index}, -1)" title="Monter">↑</button>` : ''}
+            ${index < this.destinations.length - 1 ? `<button type="button" class="step-btn" onclick="app.moveDestination(${index}, 1)" title="Descendre">↓</button>` : ''}
+            <button type="button" class="step-btn" onclick="app.removeDestinationStep(${index})" title="Supprimer">🗑️</button>
+            <button type="button" class="step-btn" onclick="app.goToDestination(${index})" title="Aller à">📍</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Mettre à jour la carte avec toutes les destinations
+  updateMapWithAllDestinations() {
+    if (this.destinations.length === 0) return;
+
+    // Effacer les marqueurs précédents
+    mapService.clearAllDestinations();
+
+    // Ajouter tous les marqueurs
+    this.destinations.forEach((dest, index) => {
+      const name = dest.shortName || dest.name?.split(',')[0] || dest.address;
+      mapService.addDestinationMarker(dest.lat, dest.lng, name, index + 1, index === this.currentDestinationIndex);
+    });
+
+    // Dessiner les routes entre les étapes
+    if (this.destinations.length > 1) {
+      for (let i = 0; i < this.destinations.length - 1; i++) {
+        const from = this.destinations[i];
+        const to = this.destinations[i + 1];
+        mapService.drawRouteBetween(from.lat, from.lng, to.lat, to.lng, i);
+      }
+    }
+
+    // Ajuster la vue pour voir toutes les destinations
+    if (this.destinations.length > 1) {
+      const bounds = this.destinations.map(d => [d.lat, d.lng]);
+      mapService.fitBounds(bounds);
+    }
+  }
+
+  // Aller à une destination spécifique
+  goToDestination(index) {
+    if (index >= 0 && index < this.destinations.length) {
+      this.currentDestinationIndex = index;
+      this.currentDestination = this.destinations[index];
+      this.updateDestinationUI();
+      this.updateDestinationsList();
+    }
+  }
+
+  // Déplacer une destination dans la liste
+  moveDestination(index, direction) {
+    if (index + direction < 0 || index + direction >= this.destinations.length) return;
+
+    const dest = this.destinations.splice(index, 1)[0];
+    this.destinations.splice(index + direction, 0, dest);
+
+    // Mettre à jour l'index actuel
+    if (this.currentDestinationIndex === index) {
+      this.currentDestinationIndex = index + direction;
+    } else if (this.currentDestinationIndex === index + direction) {
+      this.currentDestinationIndex = index;
+    }
+
+    this.updateDestinationsList();
+    this.updateMapWithAllDestinations();
+    this.updateDestinationUI();
+  }
+
+  // Supprimer une étape de l'itinéraire
+  removeDestinationStep(index) {
+    if (this.destinations.length <= 1) {
+      this.showToast('Au moins une destination est requise', 'error');
+      return;
+    }
+
+    if (confirm('Supprimer cette étape ?')) {
+      this.destinations.splice(index, 1);
+
+      // Ajuster l'index actuel
+      if (this.currentDestinationIndex >= this.destinations.length) {
+        this.currentDestinationIndex = this.destinations.length - 1;
+      } else if (this.currentDestinationIndex > index) {
+        this.currentDestinationIndex--;
+      }
+
+      this.currentDestination = this.destinations[this.currentDestinationIndex];
+      this.updateDestinationsList();
+      this.updateMapWithAllDestinations();
+      this.updateDestinationUI();
+      this.showToast('Étape supprimée', 'success');
+    }
+  }
+
+  // Passer à l'étape suivante automatiquement
+  goToNextDestination() {
+    if (this.currentDestinationIndex < this.destinations.length - 1) {
+      this.currentDestinationIndex++;
+      this.currentDestination = this.destinations[this.currentDestinationIndex];
+      this.updateDestinationUI();
+      this.updateDestinationsList();
+      this.updateMapWithAllDestinations();
+      
+      // Redémarrer le suivi pour la nouvelle destination
+      if (this.isTracking) {
+        this.stopTracking();
+        setTimeout(() => {
+          this.startTracking();
+        }, 1000);
+      }
+
+      this.showToast(`📍 Étape ${this.currentDestinationIndex + 1}/${this.destinations.length}`, 'success');
+    } else {
+      // Toutes les étapes terminées
+      this.showToast('🎉 Toutes les étapes terminées !', 'success');
+      if (this.isTracking) {
+        this.stopTracking();
+      }
+    }
   }
 
   updateTripInfo() {
@@ -1171,6 +1503,15 @@ class TerminusApp {
       this.isTracking = true;
       this.initialDistance = result.distance;
       
+      // Enregistrer le début du trajet
+      this.tripStartTime = Date.now();
+      this.tripStartLocation = {
+        lat: result.position.coords.latitude,
+        lng: result.position.coords.longitude
+      };
+      this.tripMaxSpeed = 0;
+      this.tripSpeeds = [];
+      
       document.getElementById('trackingSection').style.display = 'block';
       document.getElementById('startTrackingBtn').style.display = 'none';
 
@@ -1182,23 +1523,96 @@ class TerminusApp {
         this.showToast(`📍 Suivi GPS actif (±${Math.round(accuracy)}m)`, 'success');
       }
 
-      this.showToast('🚀 Suivi démarré', 'success');
-
     } catch (error) {
       this.showToast('Activez la géolocalisation pour le suivi', 'error');
     }
   }
 
   stopTracking() {
+    // Arrêter le partage si actif
+    shareService.stopSharing();
+
+    // Sauvegarder le trajet dans l'historique
+    if (this.tripStartTime && this.tripStartLocation && this.currentDestination) {
+      const endTime = Date.now();
+      const duration = Math.floor((endTime - this.tripStartTime) / 1000);
+      
+      // Obtenir la position finale
+      const currentPos = geolocationService.currentPosition;
+      const endLocation = currentPos ? {
+        lat: currentPos.coords.latitude,
+        lng: currentPos.coords.longitude
+      } : this.currentDestination;
+
+      // Calculer la distance totale parcourue
+      let totalDistance = 0;
+      if (this.lastPositions && this.lastPositions.length >= 2) {
+        for (let i = 1; i < this.lastPositions.length; i++) {
+          const prev = this.lastPositions[i - 1];
+          const curr = this.lastPositions[i];
+          // Utiliser la méthode de calcul de distance
+          const R = 6371000; // Rayon de la Terre en mètres
+          const dLat = (curr.lat - prev.lat) * Math.PI / 180;
+          const dLon = (curr.lng - prev.lng) * Math.PI / 180;
+          const a = 
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(prev.lat * Math.PI / 180) * Math.cos(curr.lat * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          totalDistance += Math.round(R * c);
+        }
+      } else {
+        // Utiliser la distance initiale si pas assez de positions
+        totalDistance = this.initialDistance || 0;
+      }
+
+      // Calculer la vitesse moyenne
+      const averageSpeed = this.tripSpeeds.length > 0
+        ? Math.round(this.tripSpeeds.reduce((a, b) => a + b, 0) / this.tripSpeeds.length)
+        : 0;
+
+      // Sauvegarder le trajet
+      historyService.saveTrip({
+        startTime: this.tripStartTime,
+        endTime: endTime,
+        startLat: this.tripStartLocation.lat,
+        startLng: this.tripStartLocation.lng,
+        startAddress: 'Position de départ',
+        endLat: endLocation.lat,
+        endLng: endLocation.lng,
+        endAddress: this.currentDestination.name || this.currentDestination.address || 'Destination',
+        distance: totalDistance,
+        duration: duration,
+        averageSpeed: averageSpeed,
+        maxSpeed: this.tripMaxSpeed,
+        transportMode: this.detectTransportMode(averageSpeed)
+      });
+    }
+
     geolocationService.stopTracking();
     this.isTracking = false;
+
+    // Réinitialiser les variables de trajet
+    this.tripStartTime = null;
+    this.tripStartLocation = null;
+    this.tripMaxSpeed = 0;
+    this.tripSpeeds = [];
 
     document.getElementById('trackingSection').style.display = 'none';
     document.getElementById('startTrackingBtn').style.display = 'flex';
     document.getElementById('startTrackingBtn').disabled = false;
 
-    alertService.stopSound();
+    alertService.stopAll();
     this.showToast('Suivi arrêté', 'success');
+  }
+
+  // Détecter le mode de transport basé sur la vitesse
+  detectTransportMode(avgSpeed) {
+    if (avgSpeed < 5) return 'walking';
+    if (avgSpeed < 15) return 'bike';
+    if (avgSpeed < 50) return 'car';
+    if (avgSpeed < 100) return 'train';
+    return 'unknown';
   }
 
   updateTrackingUI(position, distance, metrics = null) {
@@ -1220,6 +1634,12 @@ class TerminusApp {
     if (metrics && metrics.speedKmh !== null && metrics.speedKmh > 0) {
       document.getElementById('speedValue').textContent = `${metrics.speedKmh} km/h`;
       this.currentSpeed = metrics.speedKmh;
+      
+      // Enregistrer pour l'historique
+      this.tripSpeeds.push(metrics.speedKmh);
+      if (metrics.speedKmh > this.tripMaxSpeed) {
+        this.tripMaxSpeed = metrics.speedKmh;
+      }
     } else {
       document.getElementById('speedValue').textContent = 'Stationnaire';
     }
@@ -1371,9 +1791,13 @@ class TerminusApp {
     const settings = storageService.getSettings();
     const alertType = settings.alertType || 'all';
 
+    const stepInfo = this.destinations.length > 1 
+      ? `Étape ${this.currentDestinationIndex + 1}/${this.destinations.length}`
+      : '';
+
     const alertOptions = {
       title: '🎯 Terminus - Arrivée !',
-      body: `Vous êtes à ${distanceText} de votre destination !`,
+      body: `${stepInfo ? stepInfo + ' : ' : ''}Vous êtes à ${distanceText} de votre destination !`,
       repeats: settings.repeatCount || 0, // 0 = jusqu'à désactivation
       sound: alertType === 'all' || alertType.includes('sound'),
       vibration: alertType === 'all' || alertType.includes('vibration'),
@@ -1387,7 +1811,16 @@ class TerminusApp {
     }
 
     // Toast
-    this.showToast(`🎉 Destination atteinte ! (${distanceText})`, 'success');
+    this.showToast(`🎉 ${stepInfo ? stepInfo + ' ' : ''}Destination atteinte ! (${distanceText})`, 'success');
+
+    // Si multi-destinations, passer à la suivante après 5 secondes
+    if (this.destinations.length > 1 && this.currentDestinationIndex < this.destinations.length - 1) {
+      setTimeout(() => {
+        if (confirm(`Étape ${this.currentDestinationIndex + 1} terminée ! Passer à l'étape suivante ?`)) {
+          this.goToNextDestination();
+        }
+      }, 5000);
+    }
   }
 
   // ===== SETTINGS =====
@@ -1625,6 +2058,344 @@ class TerminusApp {
       this.displayFavorites();
       this.showToast('Favori supprimé', 'success');
     }
+  }
+
+  // ===== HISTORY =====
+  openHistory() {
+    this.displayHistory();
+    this.updateHistoryStats();
+    document.getElementById('historyModal').classList.add('show');
+  }
+
+  closeHistory() {
+    document.getElementById('historyModal').classList.remove('show');
+  }
+
+  switchHistoryTab(tabName) {
+    // Update tabs
+    document.querySelectorAll('.history-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.tab === tabName);
+    });
+
+    // Update content
+    document.getElementById('historyTripsTab').style.display = tabName === 'trips' ? 'block' : 'none';
+    document.getElementById('historyStatsTab').style.display = tabName === 'stats' ? 'block' : 'none';
+
+    if (tabName === 'stats') {
+      this.displayDetailedStats();
+    }
+  }
+
+  displayHistory() {
+    const trips = historyService.getAllTrips();
+    const container = document.getElementById('tripsList');
+
+    if (trips.length === 0) {
+      container.innerHTML = '<p class="empty-state">Aucun trajet enregistré.<br>Les trajets terminés apparaîtront ici.</p>';
+      return;
+    }
+
+    container.innerHTML = trips.map(trip => {
+      const distance = historyService.formatDistance(trip.distance);
+      const duration = historyService.formatDuration(trip.duration);
+      const date = historyService.formatDate(trip.startTime);
+      const speed = trip.averageSpeed > 0 ? `${trip.averageSpeed} km/h` : '--';
+
+      return `
+        <div class="trip-item">
+          <div class="trip-header">
+            <div class="trip-date">${date}</div>
+            <button type="button" class="trip-delete" onclick="app.deleteTrip('${trip.id}')" title="Supprimer">🗑️</button>
+          </div>
+          <div class="trip-route">
+            <div class="trip-from">📍 ${trip.startLocation.address}</div>
+            <div class="trip-arrow">↓</div>
+            <div class="trip-to">🎯 ${trip.endLocation.address}</div>
+          </div>
+          <div class="trip-metrics">
+            <span class="trip-metric">📏 ${distance}</span>
+            <span class="trip-metric">⏱️ ${duration}</span>
+            <span class="trip-metric">🚗 ${speed}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  updateHistoryStats() {
+    const stats = historyService.getStatistics();
+
+    document.getElementById('statTotalTrips').textContent = stats.totalTrips;
+    document.getElementById('statTotalDistance').textContent = `${stats.totalDistanceKm} km`;
+    document.getElementById('statTotalTime').textContent = historyService.formatDuration(stats.totalDuration);
+    document.getElementById('statTimeSaved').textContent = `${stats.totalTimeSaved} min`;
+  }
+
+  displayDetailedStats() {
+    const stats = historyService.getStatistics();
+
+    document.getElementById('statAvgDistance').textContent = historyService.formatDistance(stats.averageDistance);
+    document.getElementById('statAvgDuration').textContent = historyService.formatDuration(stats.averageDuration);
+    document.getElementById('statAvgSpeed').textContent = stats.averageSpeed > 0 ? `${stats.averageSpeed} km/h` : '--';
+
+    if (stats.longestTrip) {
+      document.getElementById('statLongestTrip').textContent = historyService.formatDistance(stats.longestTrip.distance);
+    } else {
+      document.getElementById('statLongestTrip').textContent = '--';
+    }
+
+    if (stats.fastestTrip) {
+      document.getElementById('statMaxSpeed').textContent = `${stats.fastestTrip.maxSpeed} km/h`;
+    } else {
+      document.getElementById('statMaxSpeed').textContent = '--';
+    }
+  }
+
+  deleteTrip(id) {
+    if (confirm('Supprimer ce trajet de l\'historique ?')) {
+      historyService.deleteTrip(id);
+      this.displayHistory();
+      this.updateHistoryStats();
+      this.showToast('Trajet supprimé', 'success');
+    }
+  }
+
+  exportHistory() {
+    const json = historyService.exportHistory();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `terminus-history-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.showToast('Historique exporté', 'success');
+  }
+
+  importHistory() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = historyService.importHistory(event.target.result);
+        if (result.success) {
+          this.displayHistory();
+          this.updateHistoryStats();
+          this.showToast(`${result.imported} trajets importés`, 'success');
+        } else {
+          this.showToast('Erreur d\'import: ' + result.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  clearHistory() {
+    if (confirm('⚠️ Supprimer TOUT l\'historique ? Cette action est irréversible.')) {
+      historyService.clearHistory();
+      this.displayHistory();
+      this.updateHistoryStats();
+      this.showToast('Historique effacé', 'success');
+    }
+  }
+
+  // ===== CALENDAR =====
+  openCalendar() {
+    this.displayCalendarEvents();
+    document.getElementById('calendarModal').classList.add('show');
+  }
+
+  closeCalendar() {
+    document.getElementById('calendarModal').classList.remove('show');
+  }
+
+  async importCalendar(file) {
+    try {
+      this.showToast('📅 Import du calendrier...', 'info');
+      const events = await calendarService.importICS(file);
+      this.displayCalendarEvents();
+      this.showToast(`${events.length} événements importés`, 'success');
+    } catch (error) {
+      this.showToast('Erreur d\'import: ' + error.message, 'error');
+    }
+  }
+
+  displayCalendarEvents() {
+    const container = document.getElementById('calendarEvents');
+    const upcoming = calendarService.getUpcomingEvents(20);
+
+    if (upcoming.length === 0) {
+      container.innerHTML = '<p class="empty-state">Aucun événement à venir.<br>Importez un fichier .ics pour commencer.</p>';
+      return;
+    }
+
+    container.innerHTML = upcoming.map(event => {
+      const date = calendarService.formatEventDate(event);
+      const hasLocation = event.location && event.location.trim().length > 0;
+
+      return `
+        <div class="calendar-event">
+          <div class="event-date">${date}</div>
+          <div class="event-info">
+            <div class="event-title">${event.summary || 'Sans titre'}</div>
+            ${event.location ? `<div class="event-location">📍 ${event.location}</div>` : ''}
+            ${event.description ? `<div class="event-description">${this.truncateText(event.description, 100)}</div>` : ''}
+          </div>
+          ${hasLocation ? `
+            <button type="button" class="btn-secondary" onclick="app.setDestinationFromEvent('${event.id}')" title="Définir comme destination">
+              🎯
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  async setDestinationFromEvent(eventId) {
+    const event = calendarService.events.find(e => e.id === eventId);
+    if (!event || !event.location) {
+      this.showToast('Cet événement n\'a pas de localisation', 'error');
+      return;
+    }
+
+    // Rechercher l'adresse
+    this.showToast('🔍 Recherche de l\'adresse...', 'info');
+    const locationResult = await calendarService.searchAddressInEvent(event);
+
+    if (locationResult) {
+      this.setDestination(locationResult);
+      this.closeCalendar();
+      this.showToast('📍 Destination définie depuis le calendrier', 'success');
+    } else {
+      // Essayer de géocoder directement la localisation
+      try {
+        const results = await searchService.search(event.location);
+        if (results && results.length > 0) {
+          this.setDestination(results[0]);
+          this.closeCalendar();
+          this.showToast('📍 Destination définie', 'success');
+        } else {
+          this.showToast('Adresse introuvable dans l\'événement', 'error');
+        }
+      } catch (e) {
+        this.showToast('Erreur de recherche', 'error');
+      }
+    }
+  }
+
+  // ===== SHARE POSITION =====
+  async startSharingPosition() {
+    if (!this.isTracking) {
+      this.showToast('Démarrez d\'abord le suivi', 'error');
+      return;
+    }
+
+    try {
+      const result = await shareService.startSharing({
+        destination: this.currentDestination,
+        duration: 3600000 // 1 heure
+      });
+
+      // Partager via l'API native ou copier
+      const shareResult = await shareService.shareViaNative({
+        shareUrl: result.shareUrl
+      });
+
+      if (shareResult.success) {
+        if (shareResult.method === 'clipboard') {
+          this.showToast('📋 Lien copié ! Partagez-le avec vos proches', 'success');
+        } else {
+          this.showToast('✅ Position partagée', 'success');
+        }
+      }
+
+      // Afficher les infos de partage
+      this.showShareInfo(result);
+    } catch (error) {
+      this.showToast('Erreur de partage: ' + error.message, 'error');
+    }
+  }
+
+  showShareInfo(shareInfo) {
+    const message = `📍 Position partagée !\n\nLien: ${shareInfo.shareUrl}\n\nExpire: ${shareInfo.expiresAt.toLocaleTimeString('fr-FR')}`;
+    alert(message);
+  }
+
+  // Initialiser le visualiseur de partage
+  initShareViewer(shareId) {
+    // Modifier l'interface pour le mode visualisation
+    document.querySelector('.main .container').innerHTML = `
+      <div class="share-viewer">
+        <div class="card">
+          <h2>📍 Suivi de position en temps réel</h2>
+          <div id="shareStatus">Chargement...</div>
+          <div id="shareMap" style="height: 400px; margin-top: 20px;"></div>
+          <div id="shareInfo" style="margin-top: 20px;"></div>
+        </div>
+      </div>
+    `;
+
+    // Initialiser la carte pour la visualisation
+    mapService.init('shareMap');
+
+    // Démarrer la mise à jour
+    this.updateShareViewer(shareId);
+    setInterval(() => this.updateShareViewer(shareId), 5000);
+  }
+
+  updateShareViewer(shareId) {
+    const positions = shareService.getSharedPositions(shareId);
+
+    if (!positions || !positions.isActive) {
+      document.getElementById('shareStatus').textContent = 'Partage expiré ou arrêté';
+      return;
+    }
+
+    const lastPos = positions.positions[positions.positions.length - 1];
+    if (!lastPos) {
+      document.getElementById('shareStatus').textContent = 'En attente de position...';
+      return;
+    }
+
+    // Afficher le statut
+    const timeRemaining = shareService.formatTimeRemaining(
+      shareService.getShareData(shareId)?.expiry
+    );
+    document.getElementById('shareStatus').innerHTML = `
+      <div>📍 Position mise à jour il y a ${Math.round((Date.now() - lastPos.timestamp) / 1000)}s</div>
+      <div>⏱️ Expire dans: ${timeRemaining}</div>
+    `;
+
+    // Mettre à jour la carte
+    mapService.setCenter(lastPos.lat, lastPos.lng, 15);
+    mapService.updateCurrentPosition(lastPos.lat, lastPos.lng);
+
+    // Afficher le trajet si plusieurs positions
+    if (positions.positions.length > 1) {
+      const path = positions.positions.map(p => [p.lat, p.lng]);
+      if (mapService.routeLine) {
+        mapService.map.removeLayer(mapService.routeLine);
+      }
+      mapService.routeLine = L.polyline(path, {
+        color: '#00d9ff',
+        weight: 3,
+        opacity: 0.7
+      }).addTo(mapService.map);
+    }
+
+    // Afficher les infos
+    const info = document.getElementById('shareInfo');
+    info.innerHTML = `
+      <div>📍 ${lastPos.lat.toFixed(5)}, ${lastPos.lng.toFixed(5)}</div>
+      ${lastPos.speed > 0 ? `<div>🚗 ${Math.round(lastPos.speed * 3.6)} km/h</div>` : ''}
+      ${lastPos.accuracy ? `<div>📡 Précision: ±${Math.round(lastPos.accuracy)}m</div>` : ''}
+    `;
   }
 
   addToFavorites() {

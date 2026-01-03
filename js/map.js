@@ -4,7 +4,9 @@ class MapService {
     this.map = null;
     this.marker = null;
     this.destinationMarker = null;
+    this.destinationMarkers = []; // Pour multi-destinations
     this.routeLine = null;
+    this.routeLines = []; // Pour multi-destinations
     this.zoneCircle = null;
     this.isInitialized = false;
     this.isSelecting = false;
@@ -376,12 +378,116 @@ class MapService {
     }
   }
 
+  // Ajouter un marqueur de destination (pour multi-étapes)
+  addDestinationMarker(lat, lng, name, stepNumber, isActive = false) {
+    if (!this.map) return null;
+
+    const iconColor = isActive ? '#00d9ff' : '#666';
+    const iconSize = isActive ? 40 : 32;
+
+    const destinationIcon = L.divIcon({
+      className: 'destination-marker',
+      html: `
+        <div style="
+          width: ${iconSize}px;
+          height: ${iconSize}px;
+          background: ${iconColor};
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-weight: bold;
+          font-size: ${isActive ? '16px' : '14px'};
+        ">${stepNumber}</div>
+      `,
+      iconSize: [iconSize, iconSize],
+      iconAnchor: [iconSize / 2, iconSize / 2]
+    });
+
+    const marker = L.marker([lat, lng], {
+      icon: destinationIcon
+    }).addTo(this.map);
+
+    marker.bindPopup(`
+      <div style="text-align: center; padding: 5px;">
+        <strong style="color: ${iconColor};">📍 Étape ${stepNumber}</strong><br>
+        ${name}
+      </div>
+    `);
+
+    this.destinationMarkers.push(marker);
+    return marker;
+  }
+
+  // Effacer tous les marqueurs de destination
+  clearAllDestinations() {
+    this.destinationMarkers.forEach(marker => {
+      this.map.removeLayer(marker);
+    });
+    this.destinationMarkers = [];
+
+    this.routeLines.forEach(line => {
+      this.map.removeLayer(line);
+    });
+    this.routeLines = [];
+  }
+
+  // Dessiner une route entre deux points
+  drawRouteBetween(lat1, lng1, lat2, lng2, routeIndex = 0) {
+    if (!this.map) return;
+
+    // Utiliser le service de routage OSRM (gratuit)
+    const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          const coordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+
+          const routeLine = L.polyline(coordinates, {
+            color: routeIndex === 0 ? '#00d9ff' : '#666',
+            weight: routeIndex === 0 ? 4 : 3,
+            opacity: routeIndex === 0 ? 0.8 : 0.5,
+            dashArray: routeIndex === 0 ? null : '5, 5'
+          }).addTo(this.map);
+
+          this.routeLines.push(routeLine);
+        }
+      })
+      .catch(error => {
+        console.log('Erreur routage:', error);
+        // Fallback : ligne droite
+        const routeLine = L.polyline([[lat1, lng1], [lat2, lng2]], {
+          color: routeIndex === 0 ? '#00d9ff' : '#666',
+          weight: routeIndex === 0 ? 4 : 3,
+          opacity: routeIndex === 0 ? 0.8 : 0.5,
+          dashArray: routeIndex === 0 ? null : '5, 5'
+        }).addTo(this.map);
+        this.routeLines.push(routeLine);
+      });
+  }
+
+  // Ajuster la vue pour voir toutes les destinations
+  fitBounds(bounds) {
+    if (!this.map || !bounds || bounds.length < 2) return;
+
+    const latlngs = bounds.map(b => [b[0], b[1]]);
+    const group = new L.featureGroup(latlngs.map(coord => L.marker(coord)));
+    this.map.fitBounds(group.getBounds().pad(0.1));
+  }
+
   // Nettoyer la carte
   clear() {
     if (this.destinationMarker) {
       this.map.removeLayer(this.destinationMarker);
       this.destinationMarker = null;
     }
+    this.clearAllDestinations();
     if (this.routeLine) {
       this.map.removeLayer(this.routeLine);
       this.routeLine = null;

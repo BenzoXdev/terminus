@@ -67,6 +67,18 @@
           <span class="theme-toggle-icon">☀️</span>
           <div class="theme-toggle-slider"></div>
         </div>
+        <button type="button" class="nav-btn" id="historyBtn" title="Historique" aria-label="Historique">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3h18v18H3zM9 9h6v6H9z"/>
+            <path d="M9 1v6M15 1v6M1 9h6M1 15h6M17 9h6M17 15h6M9 17v6M15 17v6"/>
+          </svg>
+        </button>
+        <button type="button" class="nav-btn" id="calendarBtn" title="Calendrier" aria-label="Calendrier">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+        </button>
         <button type="button" class="nav-btn" id="favoritesBtn" title="Favoris" aria-label="Favoris">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
@@ -310,6 +322,11 @@
 
           <!-- Current Destination Display -->
           <div class="destination-display" id="destinationDisplay" style="display: none;">
+            <!-- Step Indicator -->
+            <div class="step-indicator" id="stepIndicator" style="display: none;">
+              <span class="step-indicator-text"></span>
+            </div>
+
             <div class="destination-info">
               <span class="destination-icon">📍</span>
               <div class="destination-text">
@@ -318,6 +335,11 @@
                 <p class="destination-coords" id="destinationCoords"></p>
               </div>
               <div class="destination-actions">
+                <button type="button" class="btn-secondary" id="addToRouteBtn" title="Ajouter à l'itinéraire" aria-label="Ajouter étape">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"/>
+                  </svg>
+                </button>
                 <button type="button" class="btn-favorite" id="addToFavoritesBtn" title="Ajouter aux favoris" aria-label="Ajouter aux favoris">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
@@ -330,6 +352,9 @@
                 </button>
               </div>
             </div>
+
+            <!-- Destinations List (Multi-étapes) -->
+            <div class="destinations-list" id="destinationsList" style="display: none;"></div>
 
             <!-- Trip Info Panel -->
             <div class="trip-info" id="tripInfo">
@@ -388,7 +413,18 @@
               </svg>
               Suivi en cours
             </h3>
-            <button type="button" class="btn-stop" id="stopTrackingBtn">Arrêter</button>
+            <div class="tracking-header-actions">
+              <button type="button" class="btn-share" id="sharePositionBtn" title="Partager ma position">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="18" cy="5" r="3"/>
+                  <circle cx="6" cy="12" r="3"/>
+                  <circle cx="18" cy="19" r="3"/>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+              </button>
+              <button type="button" class="btn-stop" id="stopTrackingBtn">Arrêter</button>
+            </div>
           </div>
 
           <!-- Tracking Stats Grid -->
@@ -682,6 +718,123 @@
     </div>
   </div>
 
+  <!-- History Modal -->
+  <div class="modal" id="historyModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>📊 Historique des trajets</h2>
+        <button type="button" class="modal-close" id="closeHistoryBtn" aria-label="Fermer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <!-- Statistics -->
+        <div class="history-stats" id="historyStats">
+          <div class="stat-card">
+            <div class="stat-value" id="statTotalTrips">0</div>
+            <div class="stat-label">Trajets</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statTotalDistance">0 km</div>
+            <div class="stat-label">Distance totale</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statTotalTime">0 min</div>
+            <div class="stat-label">Temps total</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statTimeSaved">0 min</div>
+            <div class="stat-label">Temps économisé</div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="history-tabs">
+          <button type="button" class="history-tab active" data-tab="trips">Trajets</button>
+          <button type="button" class="history-tab" data-tab="stats">Statistiques</button>
+        </div>
+
+        <!-- Trips List -->
+        <div class="history-content" id="historyTripsTab">
+          <div class="history-actions">
+            <button type="button" class="btn-secondary" id="exportHistoryBtn">📥 Exporter</button>
+            <button type="button" class="btn-secondary" id="importHistoryBtn">📤 Importer</button>
+            <button type="button" class="btn-danger" id="clearHistoryBtn">🗑️ Effacer</button>
+          </div>
+          <div class="trips-list" id="tripsList">
+            <p class="empty-state">Aucun trajet enregistré</p>
+          </div>
+        </div>
+
+        <!-- Statistics Tab -->
+        <div class="history-content" id="historyStatsTab" style="display: none;">
+          <div class="stats-details">
+            <div class="stats-section">
+              <h3>📈 Vue d'ensemble</h3>
+              <div class="stats-grid">
+                <div class="stats-item">
+                  <span class="stats-item-label">Distance moyenne</span>
+                  <span class="stats-item-value" id="statAvgDistance">--</span>
+                </div>
+                <div class="stats-item">
+                  <span class="stats-item-label">Durée moyenne</span>
+                  <span class="stats-item-value" id="statAvgDuration">--</span>
+                </div>
+                <div class="stats-item">
+                  <span class="stats-item-label">Vitesse moyenne</span>
+                  <span class="stats-item-value" id="statAvgSpeed">--</span>
+                </div>
+              </div>
+            </div>
+            <div class="stats-section">
+              <h3>🏆 Records</h3>
+              <div class="stats-grid">
+                <div class="stats-item">
+                  <span class="stats-item-label">Plus long trajet</span>
+                  <span class="stats-item-value" id="statLongestTrip">--</span>
+                </div>
+                <div class="stats-item">
+                  <span class="stats-item-label">Vitesse max</span>
+                  <span class="stats-item-value" id="statMaxSpeed">--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calendar Modal -->
+  <div class="modal" id="calendarModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>📅 Calendrier</h2>
+        <button type="button" class="modal-close" id="closeCalendarBtn" aria-label="Fermer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-group">
+          <label class="setting-label">📥 Importer un calendrier (ICS)</label>
+          <input type="file" id="calendarFileInput" accept=".ics,.ical" style="display: none;">
+          <button type="button" class="btn-secondary" id="importCalendarBtn">
+            📂 Choisir un fichier .ics
+          </button>
+          <p class="install-hint">Importez votre calendrier Google, Outlook, Apple, etc.</p>
+        </div>
+
+        <div class="calendar-events" id="calendarEvents">
+          <p class="empty-state">Aucun événement importé</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Favorites Modal -->
   <div class="modal" id="favoritesModal">
     <div class="modal-content">
@@ -711,6 +864,9 @@
   <script src="js/config.js"></script>
   <script src="js/categories.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/history.js"></script>
+  <script src="js/calendar.js"></script>
+  <script src="js/share.js"></script>
   <script src="js/geolocation.js"></script>
   <script src="js/alerts.js"></script>
   <script src="js/map.js"></script>

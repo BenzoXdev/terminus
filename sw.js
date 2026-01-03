@@ -1,5 +1,5 @@
 // Service Worker pour Terminus
-const CACHE_NAME = 'terminus-v3.6.0';
+const CACHE_NAME = 'terminus-v4.2.0';
 const urlsToCache = [
   './',
   './index.html',
@@ -8,6 +8,9 @@ const urlsToCache = [
   './css/animations.css',
   './js/config.js',
   './js/categories.js',
+  './js/history.js',
+  './js/calendar.js',
+  './js/share.js',
   './js/app.js',
   './js/geolocation.js',
   './js/alerts.js',

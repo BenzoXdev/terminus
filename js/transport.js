@@ -185,6 +185,183 @@ class TransportService {
     let heading = Math.atan2(y, x) * 180 / Math.PI;
     return (heading + 360) % 360;
   }
+
+  // ===== HORAIRES EN TEMPS RÉEL =====
+
+  // Obtenir les horaires en temps réel pour un arrêt
+  async getRealtimeDepartures(stop, city = null) {
+    if (!stop || !stop.lat || !stop.lng) return null;
+
+    // Détecter la ville pour utiliser la bonne API
+    const detectedCity = city || this.detectCity(stop.lat, stop.lng);
+
+    try {
+      switch (detectedCity) {
+        case 'montreal':
+          return await this.getMontrealRealtime(stop);
+        case 'paris':
+          return await this.getParisRealtime(stop);
+        case 'toronto':
+          return await this.getTorontoRealtime(stop);
+        default:
+          return await this.getGenericRealtime(stop);
+      }
+    } catch (error) {
+      console.error('Erreur horaires temps réel:', error);
+      return null;
+    }
+  }
+
+  // Détecter la ville depuis les coordonnées
+  detectCity(lat, lng) {
+    // Montréal
+    if (lat >= 45.4 && lat <= 45.7 && lng >= -73.8 && lng <= -73.4) {
+      return 'montreal';
+    }
+    // Paris
+    if (lat >= 48.8 && lat <= 48.9 && lng >= 2.2 && lng <= 2.4) {
+      return 'paris';
+    }
+    // Toronto
+    if (lat >= 43.6 && lat <= 43.8 && lng >= -79.4 && lng <= -79.2) {
+      return 'toronto';
+    }
+    return 'generic';
+  }
+
+  // Horaires STM Montréal (via API GTFS)
+  async getMontrealRealtime(stop) {
+    try {
+      // Utiliser l'API Navitia (gratuite avec clé)
+      // Note: Nécessite une clé API, on utilise une estimation pour l'instant
+      return this.estimateNextDepartures(stop, 'montreal');
+    } catch (e) {
+      return this.estimateNextDepartures(stop, 'montreal');
+    }
+  }
+
+  // Horaires RATP Paris
+  async getParisRealtime(stop) {
+    try {
+      // API Navitia pour Paris
+      return this.estimateNextDepartures(stop, 'paris');
+    } catch (e) {
+      return this.estimateNextDepartures(stop, 'paris');
+    }
+  }
+
+  // Horaires TTC Toronto
+  async getTorontoRealtime(stop) {
+    try {
+      // API TTC
+      return this.estimateNextDepartures(stop, 'toronto');
+    } catch (e) {
+      return this.estimateNextDepartures(stop, 'toronto');
+    }
+  }
+
+  // Méthode générique (estimation basée sur fréquences moyennes)
+  async getGenericRealtime(stop) {
+    return this.estimateNextDepartures(stop, 'generic');
+  }
+
+  // Estimer les prochains départs (quand API non disponible)
+  estimateNextDepartures(stop, city) {
+    const now = new Date();
+    const currentMinutes = now.getMinutes();
+    const currentHour = now.getHours();
+
+    // Fréquences moyennes par type et ville
+    const frequencies = {
+      montreal: {
+        bus: 10,      // Toutes les 10 minutes
+        metro: 5,     // Toutes les 5 minutes
+        train: 15     // Toutes les 15 minutes
+      },
+      paris: {
+        bus: 8,
+        metro: 3,
+        train: 10
+      },
+      toronto: {
+        bus: 12,
+        metro: 4,
+        train: 20
+      },
+      generic: {
+        bus: 15,
+        metro: 5,
+        train: 20
+      }
+    };
+
+    const cityFreq = frequencies[city] || frequencies.generic;
+    const frequency = cityFreq[stop.type] || cityFreq.bus;
+
+    // Générer 3 prochains départs
+    const departures = [];
+    let nextMinutes = currentMinutes;
+
+    for (let i = 0; i < 3; i++) {
+      nextMinutes += frequency;
+      let nextHour = currentHour;
+      
+      if (nextMinutes >= 60) {
+        nextMinutes -= 60;
+        nextHour++;
+        if (nextHour >= 24) nextHour = 0;
+      }
+
+      const departureTime = new Date();
+      departureTime.setHours(nextHour, nextMinutes, 0, 0);
+      
+      const minutesUntil = (departureTime - now) / 1000 / 60;
+
+      departures.push({
+        line: stop.lines || stop.name,
+        destination: 'Direction centre-ville', // Estimation
+        time: `${String(nextHour).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`,
+        minutesUntil: Math.round(minutesUntil),
+        isRealtime: false, // Estimation, pas temps réel
+        status: minutesUntil < 2 ? 'arriving' : minutesUntil < 5 ? 'soon' : 'scheduled'
+      });
+    }
+
+    return {
+      stop: stop.name,
+      stopId: stop.id,
+      type: stop.type,
+      departures: departures,
+      lastUpdate: now.toISOString(),
+      isRealtime: false
+    };
+  }
+
+  // Obtenir les horaires pour plusieurs arrêts à proximité
+  async getNearbyRealtimeDepartures(lat, lng, radius = 500) {
+    const stops = await this.findNearbyStops(lat, lng, radius);
+    
+    // Limiter à 5 arrêts les plus proches
+    const closestStops = stops.slice(0, 5);
+
+    // Obtenir les horaires pour chaque arrêt
+    const departures = await Promise.all(
+      closestStops.map(stop => this.getRealtimeDepartures(stop))
+    );
+
+    return departures.filter(d => d !== null);
+  }
+
+  // Formater les horaires pour l'affichage
+  formatDepartureTime(departure) {
+    if (departure.minutesUntil < 1) {
+      return '🚌 Arrivée imminente';
+    } else if (departure.minutesUntil < 5) {
+      return `🚌 Dans ${departure.minutesUntil} min`;
+    } else {
+      return `🚌 ${departure.time}`;
+    }
+  }
 }
 
 // Instance globale
