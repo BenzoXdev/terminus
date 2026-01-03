@@ -1180,6 +1180,25 @@ body::before {
   text-align: center;
 }
 
+/* Status Messages */
+.status-arrived {
+  color: #10b981;
+  font-weight: 700;
+  font-size: 1.1rem;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.status-approaching {
+  color: #f59e0b;
+  font-weight: 600;
+  animation: blink 0.8s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .setting-select {
   width: 100%;
   background: var(--bg-input);

@@ -1140,35 +1140,47 @@ class TerminusApp {
       return;
     }
 
+    // Activer l'audio pour iOS
+    await alertService.forceEnableAudio();
+
     try {
       this.lastPositions = [];
 
-      await geolocationService.startTracking(
+      // Définir le rayon d'alerte
+      const alertRadius = this.zoneRadius || storageService.getSettings().alertDistance || 1000;
+
+      const result = await geolocationService.startTracking(
         this.currentDestination,
         {
-          onPositionUpdate: (position, distance) => {
-            this.updateTrackingUI(position, distance);
+          onPositionUpdate: (position, distance, metrics) => {
+            this.updateTrackingUI(position, distance, metrics);
           },
           onDistanceChange: (distance) => {
             this.updateDistance(distance);
           },
-          onArrival: (distance) => {
-            this.handleArrival(distance);
+          onArrival: (distance, position) => {
+            this.handleArrival(distance, position);
+          },
+          onError: (error) => {
+            this.showToast(error.message, 'error');
           }
-        }
+        },
+        { alertRadius }
       );
 
       this.isTracking = true;
+      this.initialDistance = result.distance;
+      
       document.getElementById('trackingSection').style.display = 'block';
       document.getElementById('startTrackingBtn').style.display = 'none';
 
-      const initialPos = await geolocationService.getCurrentPosition();
-      this.initialDistance = geolocationService.calculateDistance(
-        initialPos.coords.latitude,
-        initialPos.coords.longitude,
-        this.currentDestination.lat,
-        this.currentDestination.lng
-      );
+      // Afficher un message de confirmation
+      const accuracy = result.position.coords.accuracy;
+      if (accuracy > 100) {
+        this.showToast(`📍 Suivi démarré (précision: ±${Math.round(accuracy)}m)\n⚠️ Allez à l'extérieur pour un GPS plus précis`, 'warning');
+      } else {
+        this.showToast(`📍 Suivi GPS actif (±${Math.round(accuracy)}m)`, 'success');
+      }
 
       this.showToast('🚀 Suivi démarré', 'success');
 
@@ -1189,29 +1201,84 @@ class TerminusApp {
     this.showToast('Suivi arrêté', 'success');
   }
 
-  updateTrackingUI(position, distance) {
-    const { latitude, longitude, speed, heading, accuracy, altitude } = position.coords;
+  updateTrackingUI(position, distance, metrics = null) {
+    const { latitude, longitude, accuracy, altitude } = position.coords;
 
-    this.lastPositions.push({ lat: latitude, lng: longitude, time: Date.now() });
-    if (this.lastPositions.length > 10) {
-      this.lastPositions.shift();
+    // Mettre à jour la carte
+    mapService.updateCurrentPosition(latitude, longitude);
+    if (this.currentDestination) {
+      mapService.updateRoute(latitude, longitude, this.currentDestination.lat, this.currentDestination.lng);
     }
 
-    this.currentSpeed = speed ? speed * 3.6 : this.calculateAverageSpeed();
+    // Afficher la distance
+    const distanceText = distance >= 1000 
+      ? `${(distance / 1000).toFixed(1)} km` 
+      : `${Math.round(distance)} m`;
+    document.getElementById('distanceValue').textContent = distanceText;
 
-    mapService.updateCurrentPosition(latitude, longitude);
-    mapService.updateRoute(latitude, longitude, this.currentDestination.lat, this.currentDestination.lng);
+    // Vitesse
+    if (metrics && metrics.speedKmh !== null && metrics.speedKmh > 0) {
+      document.getElementById('speedValue').textContent = `${metrics.speedKmh} km/h`;
+      this.currentSpeed = metrics.speedKmh;
+    } else {
+      document.getElementById('speedValue').textContent = 'Stationnaire';
+    }
 
-    this.updateETA(distance);
-    document.getElementById('speedValue').textContent =
-      this.currentSpeed > 0 ? `${Math.round(this.currentSpeed)} km/h` : '--';
+    // Direction
+    if (metrics && metrics.headingText) {
+      document.getElementById('headingValue').textContent = `${metrics.headingText} (${Math.round(metrics.heading)}°)`;
+    } else {
+      document.getElementById('headingValue').textContent = '--';
+    }
 
-    const headingText = heading ? `${Math.round(heading)}° ${transportService.getCardinalDirection(heading)}` : '--';
-    document.getElementById('headingValue').textContent = headingText;
+    // Précision avec indicateur de qualité
+    let accuracyText = '--';
+    if (accuracy) {
+      const accRound = Math.round(accuracy);
+      if (accRound < 20) {
+        accuracyText = `🟢 ±${accRound}m (Excellent)`;
+      } else if (accRound < 50) {
+        accuracyText = `🟢 ±${accRound}m (Très bon)`;
+      } else if (accRound < 100) {
+        accuracyText = `🟡 ±${accRound}m (Bon)`;
+      } else if (accRound < 500) {
+        accuracyText = `🟠 ±${accRound}m (Moyen)`;
+      } else {
+        accuracyText = `🔴 ±${accRound}m (Faible - GPS non disponible)`;
+      }
+    }
+    document.getElementById('accuracyValue').textContent = accuracyText;
 
-    document.getElementById('accuracyValue').textContent = accuracy ? `±${Math.round(accuracy)}m` : '--';
-    document.getElementById('altitudeValue').textContent = altitude ? `${Math.round(altitude)}m` : '--';
-    document.getElementById('currentCoordsValue').textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+    // Altitude
+    if (altitude !== null && !isNaN(altitude)) {
+      document.getElementById('altitudeValue').textContent = `${Math.round(altitude)}m`;
+    } else {
+      document.getElementById('altitudeValue').textContent = '--';
+    }
+
+    // Coordonnées
+    document.getElementById('currentCoordsValue').textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+    // ETA
+    this.updateETA(distance, metrics);
+
+    // Message de statut
+    this.updateTrackingStatus(distance);
+  }
+
+  updateTrackingStatus(distance) {
+    const statusEl = document.getElementById('statusText');
+    if (!statusEl) return;
+
+    const zoneRadius = this.zoneRadius || 1000;
+    
+    if (distance <= zoneRadius) {
+      statusEl.innerHTML = `<span class="status-arrived">🎯 DANS LA ZONE ! (${Math.round(distance)}m)</span>`;
+    } else if (distance <= zoneRadius * 1.5) {
+      statusEl.innerHTML = `<span class="status-approaching">⚠️ Vous approchez ! (${Math.round(distance)}m)</span>`;
+    } else {
+      statusEl.textContent = `En route... (${Math.round(distance)}m restants)`;
+    }
   }
 
   calculateAverageSpeed() {
@@ -1228,24 +1295,42 @@ class TerminusApp {
     return (distance / (timeMs / 1000)) * 3.6;
   }
 
-  updateETA(distance) {
+  updateETA(distance, metrics = null) {
     const etaElement = document.getElementById('etaValue');
+    if (!etaElement) return;
 
-    if (this.currentSpeed > 1) {
-      const hoursRemaining = (distance / 1000) / this.currentSpeed;
+    // Utiliser la vitesse actuelle ou estimer
+    let speed = this.currentSpeed || (metrics?.speedKmh) || 0;
+
+    if (speed > 1) {
+      // Calcul basé sur la vitesse actuelle
+      const hoursRemaining = (distance / 1000) / speed;
       const minutesRemaining = Math.round(hoursRemaining * 60);
 
       if (minutesRemaining < 1) {
         etaElement.textContent = '< 1 min';
       } else if (minutesRemaining < 60) {
-        etaElement.textContent = `${minutesRemaining} min`;
+        etaElement.textContent = `~${minutesRemaining} min`;
       } else {
         const hours = Math.floor(minutesRemaining / 60);
         const mins = minutesRemaining % 60;
-        etaElement.textContent = `${hours}h${mins}`;
+        etaElement.textContent = `~${hours}h${mins.toString().padStart(2, '0')}`;
       }
     } else {
-      etaElement.textContent = '--';
+      // Estimer avec vitesse de marche (5 km/h)
+      const walkingSpeed = 5;
+      const hoursRemaining = (distance / 1000) / walkingSpeed;
+      const minutesRemaining = Math.round(hoursRemaining * 60);
+
+      if (minutesRemaining < 1) {
+        etaElement.textContent = '< 1 min 🚶';
+      } else if (minutesRemaining < 60) {
+        etaElement.textContent = `~${minutesRemaining} min 🚶`;
+      } else {
+        const hours = Math.floor(minutesRemaining / 60);
+        const mins = minutesRemaining % 60;
+        etaElement.textContent = `~${hours}h${mins.toString().padStart(2, '0')} 🚶`;
+      }
     }
   }
 
@@ -1269,11 +1354,39 @@ class TerminusApp {
     }
   }
 
-  handleArrival(distance) {
-    const distanceText = transportService.formatDistance(distance, this.units);
+  async handleArrival(distance, position) {
+    const distanceText = distance >= 1000 
+      ? `${(distance / 1000).toFixed(1)} km` 
+      : `${Math.round(distance)} m`;
 
-    alertService.triggerAlert(distance);
-    document.getElementById('statusText').textContent = `🎉 Vous êtes arrivé ! (${distanceText})`;
+    console.log('🎯 ARRIVÉE DÉCLENCHÉE !', { distance, distanceText });
+
+    // Afficher le message
+    const statusEl = document.getElementById('statusText');
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="status-arrived">🎉 VOUS ÊTES ARRIVÉ ! (${distanceText})</span>`;
+    }
+
+    // Déclencher les alertes
+    const settings = storageService.getSettings();
+    const alertType = settings.alertType || 'all';
+
+    const alertOptions = {
+      title: '🎯 Terminus - Arrivée !',
+      body: `Vous êtes à ${distanceText} de votre destination !`,
+      repeats: settings.repeatCount || 0, // 0 = jusqu'à désactivation
+      sound: alertType === 'all' || alertType.includes('sound'),
+      vibration: alertType === 'all' || alertType.includes('vibration'),
+      notification: alertType === 'all' || alertType.includes('notification')
+    };
+
+    try {
+      await alertService.triggerFullAlert(alertOptions);
+    } catch (e) {
+      console.error('Erreur alerte:', e);
+    }
+
+    // Toast
     this.showToast(`🎉 Destination atteinte ! (${distanceText})`, 'success');
   }
 
