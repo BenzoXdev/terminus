@@ -15,6 +15,7 @@ class TerminusApp {
     this.activeSearchTab = 'address';
     this.timeUpdateInterval = null;
     this.currentSearchResults = [];
+    this.deferredInstallPrompt = null;
 
     this.init();
   }
@@ -438,24 +439,67 @@ class TerminusApp {
     });
 
     // Test buttons
-    document.getElementById('testSoundBtn').addEventListener('click', () => {
-      alertService.playSound(storageService.getSettings().soundType);
+    document.getElementById('testSoundBtn')?.addEventListener('click', async () => {
+      await alertService.forceEnableAudio();
+      await alertService.testSound();
       this.showToast('🔊 Son testé', 'success');
     });
 
-    document.getElementById('testVibrationBtn').addEventListener('click', () => {
-      const success = alertService.vibrate();
+    document.getElementById('testVibrationBtn')?.addEventListener('click', () => {
+      const success = alertService.testVibration();
       this.showToast(success ? '📳 Vibration testée' : '📳 Vibration non supportée', success ? 'success' : 'error');
     });
 
-    document.getElementById('testNotificationBtn').addEventListener('click', async () => {
-      const success = await alertService.showNotification(500);
-      this.showToast(success ? '🔔 Notification envoyée' : '🔔 Autorisez les notifications', success ? 'success' : 'error');
+    document.getElementById('testNotificationBtn')?.addEventListener('click', async () => {
+      const result = await alertService.testNotification();
+      this.showToast(result.success ? '🔔 Notification envoyée' : '🔔 ' + result.message, result.success ? 'success' : 'error');
     });
 
-    document.getElementById('testAllBtn').addEventListener('click', () => {
-      alertService.triggerAlert(500);
+    document.getElementById('testAllBtn')?.addEventListener('click', async () => {
+      await alertService.forceEnableAudio();
+      await alertService.triggerFullAlert({
+        title: '🧪 Test Terminus',
+        body: 'Toutes les alertes fonctionnent !',
+        repeats: 1
+      });
       this.showToast('⚡ Toutes les alertes testées', 'success');
+    });
+
+    // Volume slider
+    document.getElementById('volumeSlider')?.addEventListener('input', (e) => {
+      const volume = parseInt(e.target.value);
+      document.getElementById('volumeValue').textContent = volume + '%';
+      alertService.setVolume(volume / 100);
+      storageService.updateSettings({ volume });
+    });
+
+    // Repeat count
+    document.getElementById('repeatSelect')?.addEventListener('change', (e) => {
+      const count = parseInt(e.target.value);
+      alertService.setRepeatCount(count);
+      storageService.updateSettings({ repeatCount: count });
+    });
+
+    // Sound type
+    document.getElementById('soundTypeSelect')?.addEventListener('change', (e) => {
+      alertService.selectSound(e.target.value);
+      storageService.updateSettings({ soundType: e.target.value });
+    });
+
+    // Enable all permissions
+    document.getElementById('enableAllPermissions')?.addEventListener('click', async () => {
+      await this.enableAllPermissions();
+    });
+
+    // Check background compatibility
+    document.getElementById('checkBackgroundBtn')?.addEventListener('click', async () => {
+      const result = await alertService.requestBackgroundPermission();
+      alert(result.message);
+    });
+
+    // Install app button
+    document.getElementById('installAppBtn')?.addEventListener('click', () => {
+      this.promptInstall();
     });
 
     // Modals
@@ -1246,10 +1290,177 @@ class TerminusApp {
   loadSettings() {
     const settings = storageService.getSettings();
 
-    document.getElementById('alertTypeSelect').value = settings.alertType;
-    document.getElementById('soundTypeSelect').value = settings.soundType;
+    document.getElementById('alertTypeSelect').value = settings.alertType || 'all';
+    document.getElementById('soundTypeSelect').value = settings.soundType || 'alarm';
     document.getElementById('themeSelect').value = settings.theme || 'dark';
     document.getElementById('unitsSelect').value = settings.units || 'metric';
+    
+    // Volume
+    const volumeSlider = document.getElementById('volumeSlider');
+    const volumeValue = document.getElementById('volumeValue');
+    if (volumeSlider && volumeValue) {
+      const volume = settings.volume || 80;
+      volumeSlider.value = volume;
+      volumeValue.textContent = volume + '%';
+      alertService.setVolume(volume / 100);
+    }
+    
+    // Repeat count
+    const repeatSelect = document.getElementById('repeatSelect');
+    if (repeatSelect) {
+      repeatSelect.value = settings.repeatCount !== undefined ? settings.repeatCount : 3;
+      alertService.setRepeatCount(parseInt(repeatSelect.value));
+    }
+
+    // Update system status
+    this.updateSystemStatus();
+
+    // Check if app is installable
+    this.checkInstallable();
+  }
+
+  // Mettre à jour l'état du système
+  async updateSystemStatus() {
+    const permissions = await alertService.checkPermissions();
+    const audioStatus = await alertService.getDeviceAudioStatus();
+
+    // Audio
+    const audioEl = document.getElementById('audioStatus');
+    if (audioEl) {
+      if (permissions.audio && audioStatus.message.includes('actif')) {
+        audioEl.className = 'status-item status-ok';
+        audioEl.innerHTML = '<span class="status-icon">🔊</span><span class="status-text">Audio: Actif</span>';
+      } else {
+        audioEl.className = 'status-item status-warning';
+        audioEl.innerHTML = '<span class="status-icon">🔇</span><span class="status-text">Audio: Touchez pour activer</span>';
+      }
+    }
+
+    // Vibration
+    const vibEl = document.getElementById('vibrationStatus');
+    if (vibEl) {
+      if (permissions.vibration) {
+        vibEl.className = 'status-item status-ok';
+        vibEl.innerHTML = '<span class="status-icon">📳</span><span class="status-text">Vibration: OK</span>';
+      } else {
+        vibEl.className = 'status-item status-error';
+        vibEl.innerHTML = '<span class="status-icon">📴</span><span class="status-text">Vibration: Non supporté</span>';
+      }
+    }
+
+    // Notifications
+    const notifEl = document.getElementById('notifStatus');
+    if (notifEl) {
+      if (permissions.notification) {
+        notifEl.className = 'status-item status-ok';
+        notifEl.innerHTML = '<span class="status-icon">🔔</span><span class="status-text">Notifications: OK</span>';
+      } else if (Notification.permission === 'denied') {
+        notifEl.className = 'status-item status-error';
+        notifEl.innerHTML = '<span class="status-icon">🔕</span><span class="status-text">Notifications: Bloquées</span>';
+      } else {
+        notifEl.className = 'status-item status-warning';
+        notifEl.innerHTML = '<span class="status-icon">🔔</span><span class="status-text">Notifications: À autoriser</span>';
+      }
+    }
+
+    // GPS
+    const gpsEl = document.getElementById('gpsStatus');
+    if (gpsEl) {
+      if (this.userLocation && this.userLocation.source === 'gps') {
+        gpsEl.className = 'status-item status-ok';
+        gpsEl.innerHTML = '<span class="status-icon">📍</span><span class="status-text">GPS: Actif</span>';
+      } else if (this.userLocation) {
+        gpsEl.className = 'status-item status-warning';
+        gpsEl.innerHTML = '<span class="status-icon">📍</span><span class="status-text">GPS: Via IP</span>';
+      } else {
+        gpsEl.className = 'status-item status-error';
+        gpsEl.innerHTML = '<span class="status-icon">📍</span><span class="status-text">GPS: Inactif</span>';
+      }
+    }
+  }
+
+  // Activer toutes les permissions
+  async enableAllPermissions() {
+    this.showToast('🔓 Activation des permissions...', 'info');
+
+    // 1. Audio
+    const audioResult = await alertService.forceEnableAudio();
+    
+    // 2. Notifications
+    const notifResult = await alertService.requestNotificationPermission();
+    
+    // 3. GPS
+    if (navigator.geolocation) {
+      try {
+        await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000
+          });
+        });
+      } catch (e) {
+        console.log('GPS permission:', e);
+      }
+    }
+
+    // Mettre à jour le statut
+    await this.updateSystemStatus();
+
+    // Message récapitulatif
+    const permissions = await alertService.checkPermissions();
+    let message = '✅ Permissions activées:\n';
+    message += permissions.audio ? '• Audio ✓\n' : '• Audio ✗\n';
+    message += permissions.vibration ? '• Vibration ✓\n' : '• Vibration ✗\n';
+    message += permissions.notification ? '• Notifications ✓\n' : '• Notifications ✗\n';
+
+    this.showToast(message.includes('✗') ? '⚠️ Certaines permissions manquent' : '✅ Tout est activé !', 
+                   message.includes('✗') ? 'warning' : 'success');
+  }
+
+  // Vérifier si l'app est installable
+  checkInstallable() {
+    const installSection = document.getElementById('installSection');
+    
+    // Vérifier si déjà installé
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         window.navigator.standalone;
+    
+    if (isStandalone) {
+      if (installSection) installSection.style.display = 'none';
+      return;
+    }
+
+    // Capturer l'événement d'installation
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.deferredInstallPrompt = e;
+      if (installSection) installSection.style.display = 'block';
+    });
+  }
+
+  // Prompt d'installation
+  async promptInstall() {
+    if (!this.deferredInstallPrompt) {
+      // Afficher les instructions manuelles
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      
+      if (isIOS) {
+        alert('📲 Pour installer Terminus sur iOS:\n\n1. Appuyez sur le bouton Partager (📤)\n2. Faites défiler et tapez "Sur l\'écran d\'accueil"\n3. Tapez "Ajouter"');
+      } else {
+        alert('📲 Pour installer Terminus:\n\n• Chrome/Edge: Cliquez sur l\'icône d\'installation dans la barre d\'adresse\n• Firefox: Ajoutez la page aux favoris\n• Safari: Utilisez "Ajouter à l\'écran d\'accueil"');
+      }
+      return;
+    }
+
+    this.deferredInstallPrompt.prompt();
+    const { outcome } = await this.deferredInstallPrompt.userChoice;
+    
+    if (outcome === 'accepted') {
+      this.showToast('✅ Application installée !', 'success');
+    }
+    
+    this.deferredInstallPrompt = null;
+    document.getElementById('installSection').style.display = 'none';
   }
 
   // ===== FAVORITES =====

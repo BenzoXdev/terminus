@@ -546,28 +546,77 @@
         </button>
       </div>
       <div class="modal-body">
+        <!-- État Audio/Système -->
+        <div class="setting-group system-status">
+          <label class="setting-label">📱 État du système</label>
+          <div class="system-status-grid" id="systemStatus">
+            <div class="status-item" id="audioStatus">
+              <span class="status-icon">🔊</span>
+              <span class="status-text">Audio: Vérification...</span>
+            </div>
+            <div class="status-item" id="vibrationStatus">
+              <span class="status-icon">📳</span>
+              <span class="status-text">Vibration: --</span>
+            </div>
+            <div class="status-item" id="notifStatus">
+              <span class="status-icon">🔔</span>
+              <span class="status-text">Notifications: --</span>
+            </div>
+            <div class="status-item" id="gpsStatus">
+              <span class="status-icon">📍</span>
+              <span class="status-text">GPS: --</span>
+            </div>
+          </div>
+          <button type="button" class="btn-enable-all" id="enableAllPermissions">
+            🔓 Activer toutes les permissions
+          </button>
+        </div>
+
         <div class="setting-group">
-          <label class="setting-label">Type d'alerte</label>
+          <label class="setting-label">🔔 Type d'alerte</label>
           <select id="alertTypeSelect" class="setting-select">
             <option value="all" selected>Tout (Son + Vibration + Notification)</option>
             <option value="sound">Son uniquement</option>
             <option value="vibration">Vibration uniquement</option>
             <option value="notification">Notification uniquement</option>
+            <option value="sound-vibration">Son + Vibration</option>
+            <option value="sound-notification">Son + Notification</option>
           </select>
         </div>
 
         <div class="setting-group">
-          <label class="setting-label">Type de son</label>
+          <label class="setting-label">🎵 Type de son</label>
           <select id="soundTypeSelect" class="setting-select">
-            <option value="classic" selected>Classique</option>
-            <option value="gentle">Doux</option>
-            <option value="urgent">Urgent</option>
-            <option value="melody">Mélodie</option>
+            <option value="alarm" selected>🔔 Alarme classique</option>
+            <option value="bell">🔔 Cloche</option>
+            <option value="chime">🎵 Carillon</option>
+            <option value="urgent">🚨 Urgent</option>
+            <option value="gentle">🎶 Doux</option>
+            <option value="train">🚂 Train</option>
           </select>
         </div>
 
         <div class="setting-group">
-          <label class="setting-label">Tester les alertes</label>
+          <label class="setting-label">🔊 Volume</label>
+          <div class="volume-control">
+            <input type="range" id="volumeSlider" min="0" max="100" value="80" class="slider">
+            <span id="volumeValue">80%</span>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">🔁 Répétitions de l'alarme</label>
+          <select id="repeatSelect" class="setting-select">
+            <option value="1">1 fois</option>
+            <option value="3" selected>3 fois</option>
+            <option value="5">5 fois</option>
+            <option value="10">10 fois</option>
+            <option value="0">♾️ Jusqu'à désactivation manuelle</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">🧪 Tester les alertes</label>
           <div class="test-buttons-grid">
             <button type="button" class="btn-test" id="testSoundBtn">
               <span class="btn-test-icon">🔊</span>
@@ -589,7 +638,7 @@
         </div>
 
         <div class="setting-group">
-          <label class="setting-label">Thème</label>
+          <label class="setting-label">🌙 Thème</label>
           <select id="themeSelect" class="setting-select">
             <option value="dark">Sombre</option>
             <option value="light">Clair</option>
@@ -598,11 +647,36 @@
         </div>
 
         <div class="setting-group">
-          <label class="setting-label">Unités</label>
+          <label class="setting-label">📏 Unités</label>
           <select id="unitsSelect" class="setting-select">
             <option value="metric" selected>Métrique (km)</option>
             <option value="imperial">Impérial (miles)</option>
           </select>
+        </div>
+
+        <!-- Arrière-plan -->
+        <div class="setting-group">
+          <label class="setting-label">📱 Fonctionnement en arrière-plan</label>
+          <div class="background-info" id="backgroundInfo">
+            <p>Pour que l'application fonctionne en arrière-plan :</p>
+            <ul>
+              <li>✅ Gardez l'application ouverte</li>
+              <li>✅ Activez les notifications</li>
+              <li>✅ Désactivez l'économie de batterie</li>
+            </ul>
+            <button type="button" class="btn-secondary" id="checkBackgroundBtn">
+              🔍 Vérifier la compatibilité
+            </button>
+          </div>
+        </div>
+
+        <!-- Installation PWA -->
+        <div class="setting-group" id="installSection" style="display: none;">
+          <label class="setting-label">📲 Installer l'application</label>
+          <button type="button" class="btn-install" id="installAppBtn">
+            <span>📥</span> Installer Terminus
+          </button>
+          <p class="install-hint">Installez pour un accès rapide et un meilleur fonctionnement en arrière-plan</p>
         </div>
       </div>
     </div>

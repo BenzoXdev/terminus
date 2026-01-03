@@ -1,279 +1,501 @@
-// Service d'alertes pour Terminus
+// Système d'alertes amélioré pour Terminus
 class AlertService {
   constructor() {
     this.audioContext = null;
-    this.currentAlarm = null;
     this.isPlaying = false;
-    this.hasTriggered = false;
-    this.initAudio();
-    this.requestNotificationPermission();
+    this.repeatCount = 0;
+    this.maxRepeats = 3; // Par défaut 3 répétitions, 0 = infini
+    this.repeatInterval = null;
+    this.currentOscillator = null;
+    this.volume = 1.0;
+    this.isMuted = false;
+    this.alertActive = false;
+    
+    // Sons prédéfinis
+    this.sounds = {
+      alarm: { frequencies: [880, 1100, 880, 1100], duration: 300, type: 'square' },
+      bell: { frequencies: [1047, 1319, 1568], duration: 200, type: 'sine' },
+      chime: { frequencies: [523, 659, 784, 1047], duration: 150, type: 'triangle' },
+      urgent: { frequencies: [1000, 500, 1000, 500, 1000], duration: 150, type: 'sawtooth' },
+      gentle: { frequencies: [440, 554, 659], duration: 400, type: 'sine' },
+      train: { frequencies: [600, 800, 600, 800, 600, 800], duration: 250, type: 'square' }
+    };
+    
+    this.selectedSound = 'alarm';
+    this.vibrationPattern = [200, 100, 200, 100, 400];
+    
+    // Vérifier les permissions au démarrage
+    this.checkPermissions();
   }
 
-  // Initialiser le contexte audio
-  initAudio() {
-    // On initialise le contexte audio au premier clic utilisateur
-    document.addEventListener('click', () => {
-      if (!this.audioContext) {
-        try {
-          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        } catch (error) {
-          console.error('Erreur initialisation audio:', error);
-        }
+  // ===== INITIALISATION =====
+  initAudioContext() {
+    if (!this.audioContext) {
+      try {
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        console.error('AudioContext non supporté:', e);
       }
-    }, { once: true });
+    }
+    
+    // Reprendre si suspendu (requis sur iOS)
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+    
+    return this.audioContext;
   }
 
-  // Demander la permission pour les notifications
+  // ===== VÉRIFICATION DES PERMISSIONS =====
+  async checkPermissions() {
+    const permissions = {
+      notification: false,
+      vibration: false,
+      audio: false,
+      wakeLock: false
+    };
+
+    // Notifications
+    if ('Notification' in window) {
+      permissions.notification = Notification.permission === 'granted';
+    }
+
+    // Vibration
+    permissions.vibration = 'vibrate' in navigator;
+
+    // Audio
+    permissions.audio = !!(window.AudioContext || window.webkitAudioContext);
+
+    // Wake Lock (garder l'écran allumé)
+    permissions.wakeLock = 'wakeLock' in navigator;
+
+    return permissions;
+  }
+
+  // ===== DEMANDER LA PERMISSION NOTIFICATION =====
   async requestNotificationPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
-      try {
-        await Notification.requestPermission();
-      } catch (error) {
-        console.log('Permission notification non demandée');
+    if (!('Notification' in window)) {
+      return { success: false, message: 'Les notifications ne sont pas supportées sur ce navigateur.' };
+    }
+
+    if (Notification.permission === 'granted') {
+      return { success: true, message: 'Notifications déjà autorisées !' };
+    }
+
+    if (Notification.permission === 'denied') {
+      return { 
+        success: false, 
+        message: 'Les notifications sont bloquées. Allez dans les paramètres de votre navigateur pour les autoriser.',
+        blocked: true
+      };
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        return { success: true, message: 'Notifications autorisées !' };
+      } else {
+        return { success: false, message: 'Permission de notification refusée.' };
       }
+    } catch (e) {
+      return { success: false, message: 'Erreur lors de la demande de permission.' };
     }
   }
 
-  // Déclencher une alerte
-  async triggerAlert(distance) {
-    if (this.hasTriggered) return; // Éviter les déclenchements multiples
-    this.hasTriggered = true;
+  // ===== SONS =====
+  
+  // Jouer un son avec répétition
+  async playSound(soundName = null, options = {}) {
+    const sound = this.sounds[soundName || this.selectedSound] || this.sounds.alarm;
+    const repeats = options.repeats !== undefined ? options.repeats : this.maxRepeats;
+    
+    this.stopSound(); // Arrêter tout son en cours
+    this.alertActive = true;
+    this.repeatCount = 0;
 
-    const settings = storageService.getSettings();
-    const alertType = settings.alertType;
+    const playOnce = async () => {
+      if (!this.alertActive) return;
+      
+      const ctx = this.initAudioContext();
+      if (!ctx) return;
 
-    const promises = [];
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = this.isMuted ? 0 : this.volume;
+      gainNode.connect(ctx.destination);
 
-    if (alertType === 'all' || alertType === 'sound') {
-      promises.push(this.playSound(settings.soundType));
-    }
-
-    if (alertType === 'all' || alertType === 'vibration') {
-      this.vibrate();
-    }
-
-    if (alertType === 'all' || alertType === 'notification') {
-      promises.push(this.showNotification(distance));
-    }
-
-    await Promise.all(promises);
-
-    // Reset après 30 secondes pour permettre un nouveau déclenchement
-    setTimeout(() => {
-      this.hasTriggered = false;
-    }, 30000);
-  }
-
-  // Jouer un son d'alarme
-  playSound(type = 'classic') {
-    return new Promise((resolve) => {
-      if (!this.audioContext) {
-        try {
-          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        } catch (error) {
-          console.error('Erreur création contexte audio:', error);
-          resolve();
-          return;
-        }
+      for (let i = 0; i < sound.frequencies.length; i++) {
+        if (!this.alertActive) break;
+        
+        const oscillator = ctx.createOscillator();
+        oscillator.type = sound.type;
+        oscillator.frequency.value = sound.frequencies[i];
+        oscillator.connect(gainNode);
+        
+        this.currentOscillator = oscillator;
+        oscillator.start();
+        
+        await this.delay(sound.duration);
+        oscillator.stop();
+        
+        await this.delay(50); // Pause entre les notes
       }
+    };
 
-      // S'assurer que le contexte est actif
-      if (this.audioContext.state === 'suspended') {
-        this.audioContext.resume();
+    const repeatLoop = async () => {
+      if (!this.alertActive) return;
+      
+      await playOnce();
+      this.repeatCount++;
+
+      // 0 = répéter indéfiniment
+      if (repeats === 0 || this.repeatCount < repeats) {
+        this.repeatInterval = setTimeout(repeatLoop, 1000);
+      } else {
+        this.alertActive = false;
       }
+    };
 
-      if (this.isPlaying) {
-        resolve();
-        return;
-      }
-
-      this.isPlaying = true;
-
-      try {
-        const now = this.audioContext.currentTime;
-
-        switch (type) {
-          case 'classic':
-            this.playClassicAlarm(now);
-            break;
-          case 'gentle':
-            this.playGentleAlarm(now);
-            break;
-          case 'urgent':
-            this.playUrgentAlarm(now);
-            break;
-          case 'melody':
-            this.playMelodyAlarm(now);
-            break;
-          default:
-            this.playClassicAlarm(now);
-        }
-
-        setTimeout(() => {
-          this.isPlaying = false;
-          resolve();
-        }, 2000);
-
-      } catch (error) {
-        console.error('Erreur lecture son:', error);
-        this.isPlaying = false;
-        resolve();
-      }
-    });
-  }
-
-  playClassicAlarm(startTime) {
-    const notes = [800, 1000, 800, 1000, 800];
-    notes.forEach((freq, i) => {
-      this.playTone(freq, startTime + i * 0.2, 0.15);
-    });
-  }
-
-  playGentleAlarm(startTime) {
-    const notes = [523, 659, 784]; // C5, E5, G5
-    notes.forEach((freq, i) => {
-      this.playTone(freq, startTime + i * 0.4, 0.35, 'sine', 0.2);
-    });
-  }
-
-  playUrgentAlarm(startTime) {
-    for (let i = 0; i < 8; i++) {
-      this.playTone(1200, startTime + i * 0.1, 0.05);
-      this.playTone(800, startTime + i * 0.1 + 0.05, 0.05);
-    }
-  }
-
-  playMelodyAlarm(startTime) {
-    const melody = [
-      { freq: 659, dur: 0.15 }, // E5
-      { freq: 784, dur: 0.15 }, // G5
-      { freq: 880, dur: 0.15 }, // A5
-      { freq: 784, dur: 0.15 }, // G5
-      { freq: 659, dur: 0.3 },  // E5
-    ];
-    let time = startTime;
-    melody.forEach(note => {
-      this.playTone(note.freq, time, note.dur, 'triangle', 0.25);
-      time += note.dur + 0.05;
-    });
-  }
-
-  playTone(frequency, startTime, duration, type = 'sine', volume = 0.3) {
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(this.audioContext.destination);
-
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, startTime);
-
-    gainNode.gain.setValueAtTime(0, startTime);
-    gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.01);
-    gainNode.gain.linearRampToValueAtTime(volume, startTime + duration - 0.05);
-    gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
-
-    oscillator.start(startTime);
-    oscillator.stop(startTime + duration);
-
-    this.currentAlarm = oscillator;
+    await repeatLoop();
   }
 
   // Arrêter le son
   stopSound() {
-    if (this.currentAlarm) {
+    this.alertActive = false;
+    
+    if (this.repeatInterval) {
+      clearTimeout(this.repeatInterval);
+      this.repeatInterval = null;
+    }
+    
+    if (this.currentOscillator) {
       try {
-        this.currentAlarm.stop();
-        this.currentAlarm = null;
-        this.isPlaying = false;
-      } catch (error) {
-        // L'oscillator peut déjà être arrêté
-      }
+        this.currentOscillator.stop();
+      } catch (e) {}
+      this.currentOscillator = null;
+    }
+    
+    this.isPlaying = false;
+  }
+
+  // Définir le nombre de répétitions
+  setRepeatCount(count) {
+    this.maxRepeats = count; // 0 = infini
+  }
+
+  // Définir le volume (0-1)
+  setVolume(volume) {
+    this.volume = Math.max(0, Math.min(1, volume));
+  }
+
+  // Sélectionner un son
+  selectSound(soundName) {
+    if (this.sounds[soundName]) {
+      this.selectedSound = soundName;
     }
   }
 
-  // Faire vibrer l'appareil
-  vibrate() {
+  // Liste des sons disponibles
+  getAvailableSounds() {
+    return Object.keys(this.sounds).map(key => ({
+      id: key,
+      name: this.getSoundDisplayName(key)
+    }));
+  }
+
+  getSoundDisplayName(key) {
+    const names = {
+      alarm: '🔔 Alarme classique',
+      bell: '🔔 Cloche',
+      chime: '🎵 Carillon',
+      urgent: '🚨 Urgent',
+      gentle: '🎶 Doux',
+      train: '🚂 Train'
+    };
+    return names[key] || key;
+  }
+
+  // Tester un son (une seule fois)
+  async testSound(soundName = null) {
+    const sound = this.sounds[soundName || this.selectedSound] || this.sounds.alarm;
+    
+    const ctx = this.initAudioContext();
+    if (!ctx) return;
+
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = this.isMuted ? 0.1 : this.volume; // Jouer quand même en test
+    gainNode.connect(ctx.destination);
+
+    for (const freq of sound.frequencies) {
+      const oscillator = ctx.createOscillator();
+      oscillator.type = sound.type;
+      oscillator.frequency.value = freq;
+      oscillator.connect(gainNode);
+      oscillator.start();
+      await this.delay(sound.duration);
+      oscillator.stop();
+      await this.delay(30);
+    }
+  }
+
+  // ===== VIBRATION =====
+  
+  vibrate(pattern = null) {
+    if (!('vibrate' in navigator)) {
+      console.log('Vibration non supportée');
+      return false;
+    }
+
+    try {
+      navigator.vibrate(pattern || this.vibrationPattern);
+      return true;
+    } catch (e) {
+      console.error('Erreur vibration:', e);
+      return false;
+    }
+  }
+
+  // Vibration continue jusqu'à arrêt
+  startContinuousVibration() {
+    this.alertActive = true;
+    
+    const vibrateLoop = () => {
+      if (!this.alertActive) return;
+      this.vibrate();
+      this.repeatInterval = setTimeout(vibrateLoop, 1500);
+    };
+    
+    vibrateLoop();
+  }
+
+  stopVibration() {
+    this.alertActive = false;
+    if (this.repeatInterval) {
+      clearTimeout(this.repeatInterval);
+    }
     if ('vibrate' in navigator) {
-      try {
-        // Pattern de vibration plus élaboré
-        navigator.vibrate([
-          200, 100, 200, 100, 200, 200,
-          200, 100, 200, 100, 200
-        ]);
-        return true;
-      } catch (error) {
-        console.error('Erreur vibration:', error);
-        return false;
-      }
+      navigator.vibrate(0);
     }
-    return false;
   }
 
-  // Afficher une notification
-  async showNotification(distance) {
+  testVibration() {
+    return this.vibrate([100, 50, 100, 50, 200]);
+  }
+
+  // Définir le pattern de vibration
+  setVibrationPattern(pattern) {
+    this.vibrationPattern = pattern;
+  }
+
+  // ===== NOTIFICATIONS =====
+  
+  async sendNotification(title, options = {}) {
     if (!('Notification' in window)) {
-      return false;
+      return { success: false, message: 'Notifications non supportées' };
     }
 
-    if (Notification.permission === 'granted') {
-      const distanceText = distance < 1000
-        ? `${distance}m`
-        : `${(distance / 1000).toFixed(1)}km`;
+    if (Notification.permission !== 'granted') {
+      const result = await this.requestNotificationPermission();
+      if (!result.success) return result;
+    }
 
-      try {
-        const notification = new Notification('🚂 Terminus - Destination proche !', {
-          body: `Vous êtes à ${distanceText} de votre destination.\nPréparez-vous à descendre !`,
-          icon: 'assets/icons/icon-192x192.png',
-          badge: 'assets/icons/icon-72x72.png',
-          tag: 'terminus-arrival',
+    try {
+      const notification = new Notification(title, {
+        body: options.body || 'Vous êtes arrivé à destination !',
+        icon: options.icon || './assets/icons/logo.svg',
+        badge: './assets/icons/logo.svg',
+        tag: options.tag || 'terminus-alert',
+        requireInteraction: options.requireInteraction !== false, // Reste visible
+        vibrate: this.vibrationPattern,
+        silent: false,
+        actions: options.actions || [
+          { action: 'stop', title: '✓ Arrêter' },
+          { action: 'snooze', title: '⏰ Rappel 5min' }
+        ]
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+        if (options.onClick) options.onClick();
+      };
+
+      return { success: true, notification };
+    } catch (e) {
+      console.error('Erreur notification:', e);
+      return { success: false, message: e.message };
+    }
+  }
+
+  testNotification() {
+    return this.sendNotification('🎯 Test Terminus', {
+      body: 'Les notifications fonctionnent correctement !',
+      requireInteraction: false
+    });
+  }
+
+  // ===== ALERTE COMPLÈTE =====
+  
+  async triggerFullAlert(options = {}) {
+    const results = {
+      sound: false,
+      vibration: false,
+      notification: false
+    };
+
+    // Son
+    if (options.sound !== false) {
+      this.playSound(null, { repeats: options.repeats || this.maxRepeats });
+      results.sound = true;
+    }
+
+    // Vibration
+    if (options.vibration !== false) {
+      this.startContinuousVibration();
+      results.vibration = true;
+    }
+
+    // Notification
+    if (options.notification !== false) {
+      const notifResult = await this.sendNotification(
+        options.title || '🎯 Terminus - Arrivée !',
+        {
+          body: options.body || 'Vous approchez de votre destination !',
           requireInteraction: true,
-          vibrate: [200, 100, 200]
-        });
+          onClick: () => this.stopAll()
+        }
+      );
+      results.notification = notifResult.success;
+    }
 
-        notification.onclick = () => {
-          window.focus();
-          notification.close();
-        };
-
-        // Fermer automatiquement après 10 secondes
-        setTimeout(() => {
-          notification.close();
-        }, 10000);
-
-        return true;
-      } catch (error) {
-        console.error('Erreur notification:', error);
-        return false;
+    // Wake Lock - garder l'écran allumé
+    if ('wakeLock' in navigator) {
+      try {
+        await navigator.wakeLock.request('screen');
+      } catch (e) {
+        console.log('Wake Lock non disponible');
       }
-    } else if (Notification.permission === 'default') {
-      await this.requestNotificationPermission();
-      return false;
     }
 
-    return false;
+    return results;
   }
 
-  // Réinitialiser le déclencheur
-  resetTrigger() {
-    this.hasTriggered = false;
+  stopAll() {
+    this.stopSound();
+    this.stopVibration();
+    this.alertActive = false;
   }
 
-  // Tester une alerte spécifique
-  testAlert(type) {
-    switch (type) {
-      case 'sound':
-        this.playSound(storageService.getSettings().soundType);
-        break;
-      case 'vibration':
-        this.vibrate();
-        break;
-      case 'notification':
-        this.showNotification(500);
-        break;
-      default:
-        this.triggerAlert(500);
+  // ===== ÉTAT DU VOLUME =====
+  
+  async getDeviceAudioStatus() {
+    const status = {
+      muted: false,
+      volume: 1,
+      vibrationMode: false,
+      silentMode: false,
+      canDetect: false,
+      message: ''
+    };
+
+    // Essayer de détecter via l'AudioContext
+    try {
+      const ctx = this.initAudioContext();
+      if (ctx) {
+        // Créer un oscillateur de test silencieux
+        const analyser = ctx.createAnalyser();
+        const oscillator = ctx.createOscillator();
+        oscillator.connect(analyser);
+        
+        // Vérifier si le contexte audio est en état suspendu (souvent = silencieux sur mobile)
+        if (ctx.state === 'suspended') {
+          status.silentMode = true;
+          status.message = '🔇 Audio suspendu - Touchez l\'écran pour activer';
+        } else if (ctx.state === 'running') {
+          status.canDetect = true;
+          status.message = '🔊 Audio actif';
+        }
+      }
+    } catch (e) {
+      status.message = 'Impossible de détecter l\'état audio';
     }
+
+    // Vérifier le support de la vibration
+    status.vibrationMode = 'vibrate' in navigator;
+
+    return status;
+  }
+
+  // Forcer l'activation de l'audio (nécessite une interaction utilisateur)
+  async forceEnableAudio() {
+    try {
+      const ctx = this.initAudioContext();
+      
+      if (ctx && ctx.state === 'suspended') {
+        await ctx.resume();
+        
+        // Jouer un son silencieux pour "débloquer" l'audio sur iOS
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = 0.001; // Presque silencieux
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.1);
+        
+        return { success: true, message: '🔊 Audio activé !' };
+      }
+      
+      return { success: true, message: 'Audio déjà actif' };
+    } catch (e) {
+      return { success: false, message: 'Impossible d\'activer l\'audio' };
+    }
+  }
+
+  // ===== ARRIÈRE-PLAN =====
+  
+  // Demander l'autorisation de fonctionner en arrière-plan
+  async requestBackgroundPermission() {
+    const capabilities = {
+      serviceWorker: 'serviceWorker' in navigator,
+      backgroundSync: 'sync' in (window.ServiceWorkerRegistration?.prototype || {}),
+      periodicSync: 'periodicSync' in (window.ServiceWorkerRegistration?.prototype || {}),
+      wakeLock: 'wakeLock' in navigator,
+      notifications: 'Notification' in window
+    };
+
+    let message = '📱 Fonctionnement en arrière-plan:\n\n';
+
+    if (capabilities.serviceWorker) {
+      message += '✅ Service Worker actif\n';
+    }
+
+    if (capabilities.notifications && Notification.permission === 'granted') {
+      message += '✅ Notifications activées\n';
+    } else {
+      message += '⚠️ Activez les notifications pour les alertes en arrière-plan\n';
+    }
+
+    if (capabilities.wakeLock) {
+      message += '✅ Wake Lock supporté (écran allumé)\n';
+    }
+
+    message += '\n💡 Conseils pour iOS/Android:\n';
+    message += '• Ne fermez pas l\'application\n';
+    message += '• Gardez l\'écran allumé ou utilisez le suivi\n';
+    message += '• Activez les notifications\n';
+    message += '• Désactivez l\'économie de batterie pour cette app';
+
+    return {
+      capabilities,
+      message,
+      supported: capabilities.serviceWorker && capabilities.notifications
+    };
+  }
+
+  // ===== UTILITAIRES =====
+  
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 
